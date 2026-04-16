@@ -1,0 +1,120 @@
+<nz-layout class="app-shell">
+  <nz-header #appHeader class="app-header">
+    <div class="header-primary">
+      <span class="app-brand" nz-typography>JetLag</span>
+      <button
+        type="button"
+        class="header-sidebar-toggle"
+        nz-button
+        nzShape="round"
+        nzSize="small"
+        (click)="toggleSidebar()"
+        [attr.aria-expanded]="isSidebarExpanded()"
+        aria-controls="question-sidebar-content"
+      >
+        {{ isSidebarExpanded() ? 'Hide questions' : 'Show questions' }}
+      </button>
+    </div>
+
+    <label class="selector-block">
+      <nz-select
+        class="country-select"
+        [ngModel]="selectedCountryCode()"
+        (ngModelChange)="onSelectedCountryChange($event)"
+        [nzAllowClear]="true"
+        [nzDisabled]="isLoadingCountries()"
+        [nzLoading]="isLoadingCountries()"
+        [nzShowSearch]="true"
+        nzPlaceHolder="Select a country"
+      >
+        @for (country of countryOptions(); track country.code) {
+          <nz-option [nzLabel]="country.name" [nzValue]="country.code"></nz-option>
+        }
+      </nz-select>
+    </label>
+  </nz-header>
+
+  <main class="workspace-shell">
+    <aside
+      #questionSidebar
+      class="question-sidebar"
+      [class.is-collapsed]="!isSidebarExpanded()"
+      aria-label="JetLag questions sidebar"
+    >
+      <div
+        id="question-sidebar-content"
+        class="sidebar-content"
+        [attr.aria-hidden]="!isSidebarExpanded()"
+      >
+        <app-questions-sidebar [questions]="radarQuestions()" />
+      </div>
+    </aside>
+
+    <section class="map-shell">
+      <div
+        #mapContainer
+        class="map-container"
+        aria-label="World map"
+        (contextmenu)="onMapContextMenu($event)"
+        (pointerdown)="onMapPointerDown($event)"
+        (pointermove)="onMapPointerMove($event)"
+        (pointerup)="onMapPointerUp()"
+        (pointercancel)="onMapPointerUp()"
+        (pointerleave)="onMapPointerUp()"
+      ></div>
+
+      <button
+        type="button"
+        class="map-options-trigger"
+        nz-button
+        nzShape="round"
+        nz-dropdown
+        [nzDropdownMenu]="optionsMenu"
+        nzPlacement="topLeft"
+      >
+        Options
+      </button>
+
+      <nz-dropdown-menu #optionsMenu="nzDropdownMenu">
+        <ul nz-menu>
+          <li
+            nz-menu-item
+            [nzDisabled]="radarQuestions().length === 0"
+            (click)="confirmClearQuestions()"
+          >
+            Clear saved questions
+          </li>
+        </ul>
+      </nz-dropdown-menu>
+
+      @if (contextMenuPosition(); as menuPosition) {
+        <button
+          type="button"
+          class="map-context-menu-backdrop"
+          aria-label="Close map context menu"
+          (click)="closeContextMenu()"
+        ></button>
+
+        <nz-card
+          #contextMenu
+          class="map-context-menu"
+          nzSize="small"
+          [style.left.px]="menuPosition.x"
+          [style.top.px]="menuPosition.y"
+          role="menu"
+          aria-label="Map context menu"
+        >
+          <button
+            type="button"
+            class="map-context-menu-action"
+            nz-button
+            nzType="text"
+            (click)="addRadarQuestion()"
+          >
+            Radar
+          </button>
+        </nz-card>
+      }
+    </section>
+  </main>
+</nz-layout>

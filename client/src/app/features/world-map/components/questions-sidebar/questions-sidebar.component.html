@@ -1,0 +1,23 @@
+<div class="sidebar-heading">
+  <span class="sidebar-kicker">Questions</span>
+</div>
+
+@if (questions.length > 0) {
+  @for (question of questions; track question.id; let index = $index) {
+    <app-radar-question-card
+      [question]="question"
+      [index]="index"
+      (draftModeChange)="onDraftModeChange($event)"
+      (draftRadiusChange)="onDraftRadiusChange($event)"
+      (apply)="onApply($event)"
+      (toggleCollapsed)="onToggleCollapsed($event)"
+      (toggleLocked)="onToggleLocked($event)"
+    />
+  }
+} @else {
+  <div class="sidebar-section">
+    <p class="sidebar-copy">
+      No questions added yet. Use the map context menu to add one.
+    </p>
+  </div>
+}

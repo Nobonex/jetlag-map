@@ -1,0 +1,88 @@
+<div class="sidebar-section question-card">
+  <div class="question-card-header">
+    <div class="question-card-meta">
+      <span
+        class="question-color-swatch"
+        [style.background]="question.color"
+        aria-hidden="true"
+      ></span>
+      <div>
+        <span class="sidebar-label">Radar {{ index + 1 }}</span>
+        <h3 class="question-card-title">Radar</h3>
+      </div>
+    </div>
+
+    <div class="question-card-actions">
+      <button
+        type="button"
+        nz-button
+        nzSize="small"
+        nzType="text"
+        (click)="onToggleCollapsed()"
+      >
+        {{ question.isCollapsed ? 'Expand' : 'Collapse' }}
+      </button>
+      <button
+        type="button"
+        nz-button
+        nzSize="small"
+        [nzType]="question.isLocked ? 'default' : 'text'"
+        (click)="onToggleLocked()"
+      >
+        {{ question.isLocked ? 'Unlock' : 'Lock' }}
+      </button>
+    </div>
+  </div>
+
+  @if (!question.isCollapsed) {
+    <div class="question-card-body" [class.is-locked]="question.isLocked">
+      <div class="question-field">
+        <span class="question-field-label">Answer</span>
+        <nz-radio-group
+          [ngModel]="question.draft.mode"
+          (ngModelChange)="onDraftModeChange($event)"
+          [nzDisabled]="question.isLocked"
+        >
+          <label nz-radio-button nzValue="inside">Inside</label>
+          <label nz-radio-button nzValue="outside">Outside</label>
+        </nz-radio-group>
+      </div>
+
+      <div class="question-field">
+        <span class="question-field-label">Radius</span>
+        <div class="question-size-row">
+          <nz-input-number
+            class="question-size-input"
+            [ngModel]="question.draft.radiusKm"
+            (ngModelChange)="onDraftRadiusChange($event)"
+            [nzDisabled]="question.isLocked"
+            [nzMin]="1"
+            [nzMax]="5000"
+            [nzStep]="5"
+          ></nz-input-number>
+          <span class="question-field-unit">km</span>
+        </div>
+      </div>
+
+      @if (isDirty()) {
+        <div class="question-apply-row">
+          <button
+            type="button"
+            nz-button
+            nzType="primary"
+            nzSize="small"
+            [disabled]="question.isLocked"
+            (click)="onApply()"
+          >
+            Apply
+          </button>
+        </div>
+      }
+
+      @if (question.isLocked) {
+        <p class="question-lock-note">
+          Locked: inputs are disabled and the marker cannot be moved.
+        </p>
+      }
+    </div>
+  }

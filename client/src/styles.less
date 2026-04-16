@@ -1,0 +1,100 @@
+@app-font-family: 'Aptos', 'Segoe UI', 'Helvetica Neue', Arial, sans-serif;
+
+:root {
+  --header-height: 68px;
+  --header-height-mobile: 118px;
+  color-scheme: light;
+}
+
+html,
+body {
+  margin: 0;
+  min-height: 100%;
+}
+
+body {
+  font-family: @app-font-family;
+  color: #102536;
+  background: #dfe8ee;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+app-world-map-page {
+  .map-context-menu .ant-card-body {
+    padding: 8px 12px;
+  }
+
+  .question-card .ant-radio-group {
+    display: inline-flex;
+  }
+
+  .question-card .ant-radio-button-wrapper {
+    min-width: 88px;
+    text-align: center;
+  }
+
+  .country-select .ant-select-selector {
+    min-height: 38px !important;
+    border-radius: 10px !important;
+    border-color: fade(#365269, 18%) !important;
+    background: fade(#ffffff, 90%) !important;
+    box-shadow: none !important;
+  }
+
+  .country-select.ant-select-focused .ant-select-selector,
+  .country-select.ant-select-open .ant-select-selector {
+    border-color: fade(#315977, 42%) !important;
+    box-shadow: 0 0 0 3px fade(#9ab3c5, 22%) !important;
+  }
+
+  .question-size-input .ant-input-number {
+    width: 100%;
+  }
+
+  .leaflet-control-zoom {
+    border: 0;
+    box-shadow: 0 8px 20px fade(#10283a, 18%);
+  }
+
+  .leaflet-control-zoom a {
+    width: 36px;
+    height: 36px;
+    line-height: 36px;
+    color: #17354b;
+    background: fade(#f8fbfc, 94%);
+    border-bottom-color: fade(#17354b, 10%);
+  }
+
+  .leaflet-control-zoom a:hover {
+    background: #ffffff;
+  }
+
+  .leaflet-control-attribution {
+    background: fade(#f7fafc, 88%);
+    color: #596d7d;
+    border-top-left-radius: 10px;
+  }
+
+  .leaflet-tile {
+    outline: 1px solid transparent;
+    backface-visibility: hidden;
+  }
+
+  .radar-center-marker {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  .radar-center-marker__dot {
+    width: 18px;
+    height: 18px;
+    border-radius: 999px;
+    border: 3px solid #ffffff;
+    background: var(--radar-color, #1f8b5d);
+    box-shadow: 0 0 0 2px fade(#1a3951, 28%);
+  }
+}
