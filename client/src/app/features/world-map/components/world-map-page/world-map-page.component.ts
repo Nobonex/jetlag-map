@@ -53,6 +53,7 @@ const LONG_PRESS_CONTEXT_MENU_SUPPRESS_MS = 800;
 const RADAR_CIRCLE_POINT_COUNT = 96;
 const MAX_RADAR_PLAYABLE_AREA_ZOOM = 9;
 const SELECTED_COUNTRY_STORAGE_KEY = 'jetlag.selected-country.v1';
+const MAP_PATH_SMOOTH_FACTOR = 0.2;
 
 @Component({
   selector: 'app-world-map-page',
@@ -320,6 +321,7 @@ export class WorldMapPageComponent implements AfterViewInit, OnDestroy {
     this.map = L.map(this.mapContainer.nativeElement, {
       zoomControl: false,
       minZoom: 2,
+      preferCanvas: true,
       maxBounds: WORLD_MAP_MAX_BOUNDS,
       maxBoundsViscosity: 1
     });
@@ -382,29 +384,27 @@ export class WorldMapPageComponent implements AfterViewInit, OnDestroy {
       return;
     }
 
-    this.allCountriesLayer = L.geoJSON(buildOutsideMask(activeCountryGeometry), {
-      style: () => ({
-        stroke: false,
-        fillColor: '#d2dae1',
-        fillOpacity: 0.68,
-        fillRule: 'evenodd'
-      }),
-      interactive: false,
-      smoothFactor: 0,
-      noClip: true
-    } as L.GeoJSONOptions & L.PolylineOptions).addTo(this.map);
+     this.allCountriesLayer = L.geoJSON(buildOutsideMask(activeCountryGeometry), {
+       style: () => ({
+         stroke: false,
+         fillColor: '#d2dae1',
+         fillOpacity: 0.68,
+         fillRule: 'evenodd'
+       }),
+       interactive: false,
+       smoothFactor: MAP_PATH_SMOOTH_FACTOR
+     } as L.GeoJSONOptions & L.PolylineOptions).addTo(this.map);
 
-    const activeOutlineLayer = L.geoJSON(activeCountryGeometry, {
-      style: () => ({
-        color: '#19364d',
-        weight: 2.2,
-        opacity: 0.96,
-        fill: false
-      }),
-      interactive: false,
-      smoothFactor: 0,
-      noClip: true
-    } as L.GeoJSONOptions & L.PolylineOptions);
+     const activeOutlineLayer = L.geoJSON(activeCountryGeometry, {
+       style: () => ({
+         color: '#19364d',
+         weight: 2.2,
+         opacity: 0.96,
+         fill: false
+       }),
+       interactive: false,
+       smoothFactor: MAP_PATH_SMOOTH_FACTOR
+     } as L.GeoJSONOptions & L.PolylineOptions);
 
     this.activeCountryLayer = L.layerGroup([activeOutlineLayer]).addTo(this.map);
     this.renderRadarLayer(activeCountryGeometry);
@@ -548,8 +548,7 @@ export class WorldMapPageComponent implements AfterViewInit, OnDestroy {
                 fillOpacity: 0.68
               }),
               interactive: false,
-              smoothFactor: 0,
-              noClip: true
+              smoothFactor: MAP_PATH_SMOOTH_FACTOR
             } as L.GeoJSONOptions & L.PolylineOptions)
           );
         }

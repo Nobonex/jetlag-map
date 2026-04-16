@@ -21,7 +21,8 @@ import {
   toCountryBoundaryFeatureCollection
 } from '../utils/country-boundary-geojson.util';
 
-const COUNTRY_GEOMETRY_CACHE_PREFIX = 'jetlag-country-boundary-v2:';
+const COUNTRY_GEOMETRY_CACHE_PREFIX = 'jetlag-country-boundary-v4:';
+const NOMINATIM_POLYGON_THRESHOLD = '0.001';
 
 @Injectable({ providedIn: 'root' })
 export class CountryBoundaryService {
@@ -221,7 +222,7 @@ export class CountryBoundaryService {
     const params = new URLSearchParams({
       format: 'jsonv2',
       polygon_geojson: '1',
-      polygon_threshold: '0',
+      polygon_threshold: NOMINATIM_POLYGON_THRESHOLD,
       limit: '5',
       q: country.name,
       countrycodes: country.code2.toLowerCase()

@@ -18,14 +18,14 @@ describe('CountryBoundaryService', () => {
     const service = TestBed.inject(CountryBoundaryService);
 
     globalThis.localStorage.setItem(
-      'jetlag-country-boundary-v2:AFG',
+      'jetlag-country-boundary-v4:AFG',
       JSON.stringify(createFeatureCollection())
     );
     globalThis.localStorage.setItem('jetlag.selected-country.v1', 'AFG');
 
     service.clearDetailedCountryGeometryCache();
 
-    expect(globalThis.localStorage.getItem('jetlag-country-boundary-v2:AFG')).toBeNull();
+    expect(globalThis.localStorage.getItem('jetlag-country-boundary-v4:AFG')).toBeNull();
     expect(globalThis.localStorage.getItem('jetlag.selected-country.v1')).toBe('AFG');
   });
 });
