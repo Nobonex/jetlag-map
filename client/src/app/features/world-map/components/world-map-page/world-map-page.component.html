@@ -79,10 +79,10 @@
         <ul nz-menu>
           <li
             nz-menu-item
-            [nzDisabled]="radarQuestions().length === 0"
+            [nzDisabled]="!canClearSavedData()"
             (click)="confirmClearQuestions()"
           >
-            Clear saved questions
+            Clear saved data
           </li>
         </ul>
       </nz-dropdown-menu>

@@ -52,6 +52,7 @@ const LONG_PRESS_MOVE_THRESHOLD_PX = 10;
 const LONG_PRESS_CONTEXT_MENU_SUPPRESS_MS = 800;
 const RADAR_CIRCLE_POINT_COUNT = 96;
 const MAX_RADAR_PLAYABLE_AREA_ZOOM = 9;
+const SELECTED_COUNTRY_STORAGE_KEY = 'jetlag.selected-country.v1';
 
 @Component({
   selector: 'app-world-map-page',
@@ -123,6 +124,7 @@ export class WorldMapPageComponent implements AfterViewInit, OnDestroy {
     this.initializeResponsiveSidebar();
     this.initializeMap();
     await this.countryBoundaryService.loadCountries();
+    await this.restoreSelectedCountry();
     this.renderMapState();
   }
 
@@ -136,6 +138,7 @@ export class WorldMapPageComponent implements AfterViewInit, OnDestroy {
   protected onSelectedCountryChange(countryCode: string | null): void {
     this.closeContextMenu();
     this.selectedCountryCode.set(countryCode);
+    this.persistSelectedCountry(countryCode);
     this.renderMapState();
 
     if (!countryCode) {
@@ -271,14 +274,42 @@ export class WorldMapPageComponent implements AfterViewInit, OnDestroy {
 
   protected confirmClearQuestions(): void {
     this.modalService.confirm({
-      nzTitle: 'Clear saved questions?',
+      nzTitle: 'Clear saved data?',
       nzContent:
-        'This will remove all radar questions from local storage on this device.',
-      nzOkText: 'Clear questions',
+        'This will remove saved radar questions, the selected country, and cached country boundaries from local storage on this device.',
+      nzOkText: 'Clear saved data',
       nzOkDanger: true,
       nzCancelText: 'Cancel',
-      nzOnOk: () => this.radarQuestionsService.clearQuestions()
+      nzOnOk: () => this.clearSavedData()
     });
+  }
+
+  protected canClearSavedData(): boolean {
+    return this.radarQuestions().length > 0 || this.selectedCountryCode() !== null;
+  }
+
+  private async restoreSelectedCountry(): Promise<void> {
+    const storedCountryCode = this.getPersistedSelectedCountry();
+    if (!storedCountryCode) {
+      return;
+    }
+
+    if (!this.countryBoundaryService.getCountryByCode(storedCountryCode)) {
+      this.persistSelectedCountry(null);
+      return;
+    }
+
+    this.selectedCountryCode.set(storedCountryCode);
+    await this.countryBoundaryService.loadDetailedCountryGeometry(storedCountryCode);
+  }
+
+  private clearSavedData(): void {
+    this.radarQuestionsService.clearQuestions();
+    this.countryBoundaryService.clearDetailedCountryGeometryCache();
+    this.selectedCountryCode.set(null);
+    this.persistSelectedCountry(null);
+    this.closeContextMenu();
+    this.renderMapState();
   }
 
   private initializeMap(): void {
@@ -466,6 +497,32 @@ export class WorldMapPageComponent implements AfterViewInit, OnDestroy {
     }
 
     this.longPressStartPoint = null;
+  }
+
+  private getPersistedSelectedCountry(): string | null {
+    try {
+      return globalThis.localStorage?.getItem(SELECTED_COUNTRY_STORAGE_KEY) ?? null;
+    } catch {
+      return null;
+    }
+  }
+
+  private persistSelectedCountry(countryCode: string | null): void {
+    try {
+      const storage = globalThis.localStorage;
+      if (!storage) {
+        return;
+      }
+
+      if (countryCode) {
+        storage.setItem(SELECTED_COUNTRY_STORAGE_KEY, countryCode);
+        return;
+      }
+
+      storage.removeItem(SELECTED_COUNTRY_STORAGE_KEY);
+    } catch {
+      // Ignore storage-access failures.
+    }
   }
 
   private renderRadarLayer(

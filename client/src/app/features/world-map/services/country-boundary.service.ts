@@ -34,6 +34,7 @@ export class CountryBoundaryService {
     FeatureCollection<Polygon | MultiPolygon>
   >();
   private readonly detailedCountryGeometryRequests = new Map<string, Promise<void>>();
+  private detailedCountryGeometryCacheVersion = 0;
   private countryFeatureCollection: CountryFeatureCollection = {
     type: 'FeatureCollection',
     features: []
@@ -83,6 +84,32 @@ export class CountryBoundaryService {
     return this.ensureDetailedCountryGeometry(country);
   }
 
+  clearDetailedCountryGeometryCache(): void {
+    this.detailedCountryGeometryCacheVersion += 1;
+    this.detailedCountryGeometries.clear();
+
+    try {
+      const storage = globalThis.localStorage;
+      if (!storage) {
+        return;
+      }
+
+      const keysToRemove: string[] = [];
+      for (let index = 0; index < storage.length; index += 1) {
+        const key = storage.key(index);
+        if (key?.startsWith(COUNTRY_GEOMETRY_CACHE_PREFIX)) {
+          keysToRemove.push(key);
+        }
+      }
+
+      for (const key of keysToRemove) {
+        storage.removeItem(key);
+      }
+    } catch {
+      // Ignore storage-access failures while clearing the cache.
+    }
+  }
+
   private async loadCountryData(): Promise<void> {
     try {
       const [topology, countries] = await Promise.all([
@@ -124,8 +151,13 @@ export class CountryBoundaryService {
       return existingRequest;
     }
 
+    const requestCacheVersion = this.detailedCountryGeometryCacheVersion;
     const request = this.fetchCountryBoundaryGeometry(country)
       .then((geometry) => {
+        if (requestCacheVersion !== this.detailedCountryGeometryCacheVersion) {
+          return;
+        }
+
         this.detailedCountryGeometries.set(country.code, geometry);
         this.setCachedCountryGeometry(country.code, geometry);
       })
@@ -133,7 +165,9 @@ export class CountryBoundaryService {
         console.error(`Failed to load exact geometry for ${country.code}.`, error);
       })
       .finally(() => {
-        this.detailedCountryGeometryRequests.delete(country.code);
+        if (this.detailedCountryGeometryRequests.get(country.code) === request) {
+          this.detailedCountryGeometryRequests.delete(country.code);
+        }
       });
 
     this.detailedCountryGeometryRequests.set(country.code, request);
