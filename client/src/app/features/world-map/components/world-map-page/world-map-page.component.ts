@@ -3,21 +3,14 @@ import {
   ChangeDetectionStrategy,
   Component,
   ElementRef,
-  HostListener,
   effect,
   inject,
   OnDestroy,
   ViewChild,
-  signal
+  signal,
 } from '@angular/core';
 import { FormsModule } from '@angular/forms';
-import type {
-  Feature,
-  FeatureCollection,
-  MultiPolygon,
-  Polygon,
-  Position
-} from 'geojson';
+import type { Feature, FeatureCollection, MultiPolygon, Polygon, Position } from 'geojson';
 import * as L from 'leaflet';
 import { NzButtonModule } from 'ng-zorro-antd/button';
 import { NzCardModule } from 'ng-zorro-antd/card';
@@ -32,16 +25,12 @@ import {
   WORLD_MAP_FIT_PADDING_BOTTOM_RIGHT,
   WORLD_MAP_HEADER_HEIGHT,
   WORLD_MAP_MAX_BOUNDS,
-  WORLD_MAP_MAX_SELECTION_ZOOM
+  WORLD_MAP_MAX_SELECTION_ZOOM,
 } from '../../constants/world-map.constants';
 import type { QuestionCenter, RadarQuestion } from '../../models/radar-question.model';
 import { CountryBoundaryService } from '../../services/country-boundary.service';
 import { RadarQuestionsService } from '../../services/radar-questions.service';
-import {
-  buildOutsideMask,
-  intersectGeometry,
-  subtractGeometry
-} from '../../utils/map-mask.util';
+import { buildOutsideMask, intersectGeometry, subtractGeometry } from '../../utils/map-mask.util';
 import { QuestionsSidebarComponent } from '../questions-sidebar/questions-sidebar.component';
 
 const CONTEXT_MENU_WIDTH = 220;
@@ -66,13 +55,30 @@ const MAP_PATH_SMOOTH_FACTOR = 0.2;
     NzModalModule,
     NzSelectModule,
     NzTypographyModule,
-    QuestionsSidebarComponent
+    QuestionsSidebarComponent,
   ],
   templateUrl: './world-map-page.component.html',
   styleUrl: './world-map-page.component.less',
-  changeDetection: ChangeDetectionStrategy.OnPush
+  changeDetection: ChangeDetectionStrategy.OnPush,
+  host: {
+    '(document:pointerdown)': 'onDocumentPointerDown($event)',
+    '(document:keydown.escape)': 'onEscapeKey()',
+  },
 })
 export class WorldMapPageComponent implements AfterViewInit, OnDestroy {
+  private readonly countryBoundaryService = inject(CountryBoundaryService);
+  private readonly radarQuestionsService = inject(RadarQuestionsService);
+  private readonly modalService = inject(NzModalService);
+
+  // --- Protected properties ---
+  protected readonly $selectedCountryCode = signal<string | null>(null);
+  protected readonly $isSidebarExpanded = signal(true);
+  protected readonly $contextMenuPosition = signal<ContextMenuPosition | null>(null);
+  protected readonly $radarQuestions = this.radarQuestionsService.$questions;
+  protected readonly $countryOptions = this.countryBoundaryService.$countryOptions;
+  protected readonly $isLoadingCountries = this.countryBoundaryService.$isLoadingCountries;
+
+  // --- Private properties ---
   private static readonly mobileSidebarMediaQuery = '(max-width: 720px)';
 
   @ViewChild('mapContainer', { static: true })
@@ -86,17 +92,6 @@ export class WorldMapPageComponent implements AfterViewInit, OnDestroy {
 
   @ViewChild('contextMenu')
   private readonly contextMenu?: ElementRef<HTMLElement>;
-
-  private readonly countryBoundaryService = inject(CountryBoundaryService);
-  private readonly radarQuestionsService = inject(RadarQuestionsService);
-  private readonly modalService = inject(NzModalService);
-
-  protected readonly selectedCountryCode = signal<string | null>(null);
-  protected readonly isSidebarExpanded = signal(true);
-  protected readonly contextMenuPosition = signal<ContextMenuPosition | null>(null);
-  protected readonly radarQuestions = this.radarQuestionsService.questions;
-  protected readonly countryOptions = this.countryBoundaryService.countryOptions;
-  protected readonly isLoadingCountries = this.countryBoundaryService.isLoadingCountries;
 
   private map?: L.Map;
   private allCountriesLayer?: L.GeoJSON;
@@ -112,7 +107,7 @@ export class WorldMapPageComponent implements AfterViewInit, OnDestroy {
     this.syncSidebarExpansion(event.matches);
   };
   private readonly syncRadarQuestionsEffect = effect(() => {
-    this.radarQuestions();
+    this.$radarQuestions();
 
     if (!this.map) {
       return;
@@ -138,7 +133,7 @@ export class WorldMapPageComponent implements AfterViewInit, OnDestroy {
 
   protected onSelectedCountryChange(countryCode: string | null): void {
     this.closeContextMenu();
-    this.selectedCountryCode.set(countryCode);
+    this.$selectedCountryCode.set(countryCode);
     this.persistSelectedCountry(countryCode);
     this.renderMapState();
 
@@ -147,7 +142,7 @@ export class WorldMapPageComponent implements AfterViewInit, OnDestroy {
     }
 
     void this.countryBoundaryService.loadDetailedCountryGeometry(countryCode).then(() => {
-      if (this.selectedCountryCode() === countryCode) {
+      if (this.$selectedCountryCode() === countryCode) {
         this.renderMapState();
       }
     });
@@ -158,14 +153,14 @@ export class WorldMapPageComponent implements AfterViewInit, OnDestroy {
       return;
     }
 
-    const shouldExpand = !this.isSidebarExpanded();
-    this.isSidebarExpanded.set(shouldExpand);
+    const shouldExpand = !this.$isSidebarExpanded();
+    this.$isSidebarExpanded.set(shouldExpand);
 
     if (shouldExpand) {
       requestAnimationFrame(() => {
         this.questionSidebar?.nativeElement.scrollIntoView({
           behavior: 'smooth',
-          block: 'start'
+          block: 'start',
         });
       });
     }
@@ -231,9 +226,8 @@ export class WorldMapPageComponent implements AfterViewInit, OnDestroy {
     this.clearLongPressTimer();
   }
 
-  @HostListener('document:pointerdown', ['$event'])
   protected onDocumentPointerDown(event: PointerEvent): void {
-    if (!this.contextMenuPosition()) {
+    if (!this.$contextMenuPosition()) {
       return;
     }
 
@@ -255,7 +249,6 @@ export class WorldMapPageComponent implements AfterViewInit, OnDestroy {
     this.closeContextMenu();
   }
 
-  @HostListener('document:keydown.escape')
   protected onEscapeKey(): void {
     this.closeContextMenu();
   }
@@ -268,7 +261,7 @@ export class WorldMapPageComponent implements AfterViewInit, OnDestroy {
 
     this.radarQuestionsService.addRadarQuestion({
       lat: center.lat,
-      lng: center.lng
+      lng: center.lng,
     });
     this.closeContextMenu();
   }
@@ -281,12 +274,12 @@ export class WorldMapPageComponent implements AfterViewInit, OnDestroy {
       nzOkText: 'Clear saved data',
       nzOkDanger: true,
       nzCancelText: 'Cancel',
-      nzOnOk: () => this.clearSavedData()
+      nzOnOk: () => this.clearSavedData(),
     });
   }
 
   protected canClearSavedData(): boolean {
-    return this.radarQuestions().length > 0 || this.selectedCountryCode() !== null;
+    return this.$radarQuestions().length > 0 || this.$selectedCountryCode() !== null;
   }
 
   private async restoreSelectedCountry(): Promise<void> {
@@ -300,14 +293,14 @@ export class WorldMapPageComponent implements AfterViewInit, OnDestroy {
       return;
     }
 
-    this.selectedCountryCode.set(storedCountryCode);
+    this.$selectedCountryCode.set(storedCountryCode);
     await this.countryBoundaryService.loadDetailedCountryGeometry(storedCountryCode);
   }
 
   private clearSavedData(): void {
     this.radarQuestionsService.clearQuestions();
     this.countryBoundaryService.clearDetailedCountryGeometryCache();
-    this.selectedCountryCode.set(null);
+    this.$selectedCountryCode.set(null);
     this.persistSelectedCountry(null);
     this.closeContextMenu();
     this.renderMapState();
@@ -323,7 +316,7 @@ export class WorldMapPageComponent implements AfterViewInit, OnDestroy {
       minZoom: 2,
       preferCanvas: true,
       maxBounds: WORLD_MAP_MAX_BOUNDS,
-      maxBoundsViscosity: 1
+      maxBoundsViscosity: 1,
     });
 
     L.control.zoom({ position: 'bottomright' }).addTo(this.map);
@@ -331,7 +324,7 @@ export class WorldMapPageComponent implements AfterViewInit, OnDestroy {
     L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
       attribution: '&copy; OpenStreetMap contributors',
       maxZoom: 19,
-      noWrap: true
+      noWrap: true,
     }).addTo(this.map);
 
     this.renderMapState();
@@ -350,13 +343,10 @@ export class WorldMapPageComponent implements AfterViewInit, OnDestroy {
     this.activeCountryLayer?.removeFrom(this.map);
     this.radarLayer?.removeFrom(this.map);
 
-    const activeCountry = this.countryBoundaryService.getCountryByCode(
-      this.selectedCountryCode()
-    );
+    const activeCountry = this.countryBoundaryService.getCountryByCode(this.$selectedCountryCode());
 
     if (!activeCountry) {
-      const worldFeatureCollection =
-        this.countryBoundaryService.getCountryFeatureCollection();
+      const worldFeatureCollection = this.countryBoundaryService.getCountryFeatureCollection();
 
       if (worldFeatureCollection.features.length > 0) {
         this.allCountriesLayer = L.geoJSON(worldFeatureCollection, {
@@ -364,9 +354,9 @@ export class WorldMapPageComponent implements AfterViewInit, OnDestroy {
             color: '#4f6578',
             weight: 0.7,
             opacity: 0.28,
-            fill: false
+            fill: false,
           }),
-          interactive: false
+          interactive: false,
         }).addTo(this.map);
       }
 
@@ -377,34 +367,35 @@ export class WorldMapPageComponent implements AfterViewInit, OnDestroy {
       return;
     }
 
-    const activeCountryGeometry =
-      this.countryBoundaryService.getCountryGeometry(activeCountry.code);
+    const activeCountryGeometry = this.countryBoundaryService.getCountryGeometry(
+      activeCountry.code,
+    );
     if (!activeCountryGeometry) {
       this.fitBounds(WORLD_MAP_DEFAULT_BOUNDS);
       return;
     }
 
-     this.allCountriesLayer = L.geoJSON(buildOutsideMask(activeCountryGeometry), {
-       style: () => ({
-         stroke: false,
-         fillColor: '#d2dae1',
-         fillOpacity: 0.68,
-         fillRule: 'evenodd'
-       }),
-       interactive: false,
-       smoothFactor: MAP_PATH_SMOOTH_FACTOR
-     } as L.GeoJSONOptions & L.PolylineOptions).addTo(this.map);
+    this.allCountriesLayer = L.geoJSON(buildOutsideMask(activeCountryGeometry), {
+      style: () => ({
+        stroke: false,
+        fillColor: '#d2dae1',
+        fillOpacity: 0.68,
+        fillRule: 'evenodd',
+      }),
+      interactive: false,
+      smoothFactor: MAP_PATH_SMOOTH_FACTOR,
+    } as L.GeoJSONOptions & L.PolylineOptions).addTo(this.map);
 
-     const activeOutlineLayer = L.geoJSON(activeCountryGeometry, {
-       style: () => ({
-         color: '#19364d',
-         weight: 2.2,
-         opacity: 0.96,
-         fill: false
-       }),
-       interactive: false,
-       smoothFactor: MAP_PATH_SMOOTH_FACTOR
-     } as L.GeoJSONOptions & L.PolylineOptions);
+    const activeOutlineLayer = L.geoJSON(activeCountryGeometry, {
+      style: () => ({
+        color: '#19364d',
+        weight: 2.2,
+        opacity: 0.96,
+        fill: false,
+      }),
+      interactive: false,
+      smoothFactor: MAP_PATH_SMOOTH_FACTOR,
+    } as L.GeoJSONOptions & L.PolylineOptions);
 
     this.activeCountryLayer = L.layerGroup([activeOutlineLayer]).addTo(this.map);
     this.renderRadarLayer(activeCountryGeometry);
@@ -413,7 +404,7 @@ export class WorldMapPageComponent implements AfterViewInit, OnDestroy {
     if (shouldFitMap) {
       this.fitBounds(
         playableAreaBounds ?? activeOutlineLayer.getBounds(),
-        playableAreaBounds ? MAX_RADAR_PLAYABLE_AREA_ZOOM : WORLD_MAP_MAX_SELECTION_ZOOM
+        playableAreaBounds ? MAX_RADAR_PLAYABLE_AREA_ZOOM : WORLD_MAP_MAX_SELECTION_ZOOM,
       );
     }
   }
@@ -422,7 +413,7 @@ export class WorldMapPageComponent implements AfterViewInit, OnDestroy {
     this.map?.fitBounds(bounds, {
       paddingTopLeft: L.point(24, this.getHeaderHeight() + 24),
       paddingBottomRight: WORLD_MAP_FIT_PADDING_BOTTOM_RIGHT,
-      maxZoom
+      maxZoom,
     });
   }
 
@@ -435,14 +426,9 @@ export class WorldMapPageComponent implements AfterViewInit, OnDestroy {
       return;
     }
 
-    this.mobileSidebarQuery = globalThis.matchMedia(
-      WorldMapPageComponent.mobileSidebarMediaQuery
-    );
+    this.mobileSidebarQuery = globalThis.matchMedia(WorldMapPageComponent.mobileSidebarMediaQuery);
     this.syncSidebarExpansion(this.mobileSidebarQuery.matches);
-    this.mobileSidebarQuery.addEventListener(
-      'change',
-      this.onMobileSidebarQueryChange
-    );
+    this.mobileSidebarQuery.addEventListener('change', this.onMobileSidebarQueryChange);
   }
 
   private detachResponsiveSidebarListener(): void {
@@ -450,14 +436,11 @@ export class WorldMapPageComponent implements AfterViewInit, OnDestroy {
       return;
     }
 
-    this.mobileSidebarQuery.removeEventListener(
-      'change',
-      this.onMobileSidebarQueryChange
-    );
+    this.mobileSidebarQuery.removeEventListener('change', this.onMobileSidebarQueryChange);
   }
 
   private syncSidebarExpansion(isMobileViewport: boolean): void {
-    this.isSidebarExpanded.set(!isMobileViewport);
+    this.$isSidebarExpanded.set(!isMobileViewport);
     requestAnimationFrame(() => this.map?.invalidateSize());
   }
 
@@ -470,23 +453,20 @@ export class WorldMapPageComponent implements AfterViewInit, OnDestroy {
     const x = clamp(
       clientX - rect.left,
       CONTEXT_MENU_MARGIN,
-      Math.max(CONTEXT_MENU_MARGIN, rect.width - CONTEXT_MENU_WIDTH - CONTEXT_MENU_MARGIN)
+      Math.max(CONTEXT_MENU_MARGIN, rect.width - CONTEXT_MENU_WIDTH - CONTEXT_MENU_MARGIN),
     );
     const y = clamp(
       clientY - rect.top,
       CONTEXT_MENU_MARGIN,
-      Math.max(
-        CONTEXT_MENU_MARGIN,
-        rect.height - CONTEXT_MENU_HEIGHT - CONTEXT_MENU_MARGIN
-      )
+      Math.max(CONTEXT_MENU_MARGIN, rect.height - CONTEXT_MENU_HEIGHT - CONTEXT_MENU_MARGIN),
     );
 
-    this.contextMenuPosition.set({ x, y });
+    this.$contextMenuPosition.set({ x, y });
     this.contextMenuLatLng = latLng;
   }
 
   protected closeContextMenu(): void {
-    this.contextMenuPosition.set(null);
+    this.$contextMenuPosition.set(null);
     this.contextMenuLatLng = null;
   }
 
@@ -526,9 +506,9 @@ export class WorldMapPageComponent implements AfterViewInit, OnDestroy {
   }
 
   private renderRadarLayer(
-    activeCountryGeometry: FeatureCollection<Polygon | MultiPolygon> | null
+    activeCountryGeometry: FeatureCollection<Polygon | MultiPolygon> | null,
   ): void {
-    const questions = this.radarQuestions();
+    const questions = this.$radarQuestions();
     if (!this.map || questions.length === 0) {
       return;
     }
@@ -545,11 +525,11 @@ export class WorldMapPageComponent implements AfterViewInit, OnDestroy {
               style: () => ({
                 stroke: false,
                 fillColor: '#d2dae1',
-                fillOpacity: 0.68
+                fillOpacity: 0.68,
               }),
               interactive: false,
-              smoothFactor: MAP_PATH_SMOOTH_FACTOR
-            } as L.GeoJSONOptions & L.PolylineOptions)
+              smoothFactor: MAP_PATH_SMOOTH_FACTOR,
+            } as L.GeoJSONOptions & L.PolylineOptions),
           );
         }
       }
@@ -566,12 +546,12 @@ export class WorldMapPageComponent implements AfterViewInit, OnDestroy {
         opacity: 0.95,
         fillColor: question.color,
         fillOpacity: 0.08,
-        interactive: false
+        interactive: false,
       });
 
       const radarMarker = L.marker(center, {
         draggable: !question.isLocked,
-        icon: createRadarMarkerIcon(question.color)
+        icon: createRadarMarkerIcon(question.color),
       });
 
       if (!question.isLocked) {
@@ -584,7 +564,7 @@ export class WorldMapPageComponent implements AfterViewInit, OnDestroy {
           this.suppressNextMapFit = true;
           this.radarQuestionsService.updateQuestionCenter(question.id, {
             lat: nextCenter.lat,
-            lng: nextCenter.lng
+            lng: nextCenter.lng,
           });
         });
       }
@@ -596,7 +576,7 @@ export class WorldMapPageComponent implements AfterViewInit, OnDestroy {
   }
 
   private getRadarQuestionsBounds(): L.LatLngBounds | null {
-    const questions = this.radarQuestions();
+    const questions = this.$radarQuestions();
     if (questions.length === 0) {
       return null;
     }
@@ -612,7 +592,7 @@ export class WorldMapPageComponent implements AfterViewInit, OnDestroy {
   }
 
   private getPlayableAreaBounds(
-    activeCountryGeometry: FeatureCollection<Polygon | MultiPolygon>
+    activeCountryGeometry: FeatureCollection<Polygon | MultiPolygon>,
   ): L.LatLngBounds | null {
     const playableArea = this.buildPlayableArea(activeCountryGeometry);
     if (!playableArea || playableArea.features.length === 0) {
@@ -624,9 +604,9 @@ export class WorldMapPageComponent implements AfterViewInit, OnDestroy {
   }
 
   private buildPlayableArea(
-    activeCountryGeometry: FeatureCollection<Polygon | MultiPolygon>
+    activeCountryGeometry: FeatureCollection<Polygon | MultiPolygon>,
   ): FeatureCollection<Polygon> | null {
-    const questions = this.radarQuestions();
+    const questions = this.$radarQuestions();
     if (questions.length === 0) {
       return null;
     }
@@ -639,8 +619,8 @@ export class WorldMapPageComponent implements AfterViewInit, OnDestroy {
         properties: {},
         geometry: createCirclePolygon(
           L.latLng(question.center.lat, question.center.lng),
-          question.applied.radiusKm * 1000
-        )
+          question.applied.radiusKm * 1000,
+        ),
       };
 
       playableArea =
@@ -681,25 +661,24 @@ function createCirclePolygon(center: L.LatLng, radiusMeters: number): Polygon {
     const bearing = (2 * Math.PI * index) / RADAR_CIRCLE_POINT_COUNT;
     const nextLatitude = Math.asin(
       Math.sin(latitudeRadians) * Math.cos(angularDistance) +
-        Math.cos(latitudeRadians) * Math.sin(angularDistance) * Math.cos(bearing)
+        Math.cos(latitudeRadians) * Math.sin(angularDistance) * Math.cos(bearing),
     );
     const nextLongitude =
       longitudeRadians +
       Math.atan2(
         Math.sin(bearing) * Math.sin(angularDistance) * Math.cos(latitudeRadians),
-        Math.cos(angularDistance) -
-          Math.sin(latitudeRadians) * Math.sin(nextLatitude)
+        Math.cos(angularDistance) - Math.sin(latitudeRadians) * Math.sin(nextLatitude),
       );
 
     coordinates.push([
       normalizeLongitude(radiansToDegrees(nextLongitude)),
-      radiansToDegrees(nextLatitude)
+      radiansToDegrees(nextLatitude),
     ]);
   }
 
   return {
     type: 'Polygon',
-    coordinates: [coordinates]
+    coordinates: [coordinates],
   };
 }
 
@@ -708,7 +687,7 @@ function createRadarMarkerIcon(color: string): L.DivIcon {
     className: 'radar-center-marker',
     iconSize: [18, 18],
     iconAnchor: [9, 9],
-    html: `<span class="radar-center-marker__dot" style="--radar-color: ${color}"></span>`
+    html: `<span class="radar-center-marker__dot" style="--radar-color: ${color}"></span>`,
   });
 }
 
@@ -725,7 +704,7 @@ function normalizeLongitude(value: number): number {
 }
 
 function toPolygonFeatureCollection(
-  geometry: FeatureCollection<Polygon | MultiPolygon>
+  geometry: FeatureCollection<Polygon | MultiPolygon>,
 ): FeatureCollection<Polygon> {
   return {
     type: 'FeatureCollection',
@@ -735,8 +714,8 @@ function toPolygonFeatureCollection(
           {
             type: 'Feature' as const,
             properties: feature.properties ?? {},
-            geometry: feature.geometry
-          }
+            geometry: feature.geometry,
+          },
         ];
       }
 
@@ -745,10 +724,10 @@ function toPolygonFeatureCollection(
         properties: feature.properties ?? {},
         geometry: {
           type: 'Polygon' as const,
-          coordinates
-        }
+          coordinates,
+        },
       }));
-    })
+    }),
   };
 }
 
@@ -758,8 +737,8 @@ function getRadarQuestionBounds(question: RadarQuestion): L.LatLngBounds {
     properties: {},
     geometry: createCirclePolygon(
       L.latLng(question.center.lat, question.center.lng),
-      question.applied.radiusKm * 1000
-    )
+      question.applied.radiusKm * 1000,
+    ),
   };
 
   return L.geoJSON(radarFeature).getBounds();

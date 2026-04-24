@@ -19,8 +19,8 @@ const RADAR_QUESTIONS_STORAGE_KEY = 'jetlag.radar-questions.v1';
 
 @Injectable({ providedIn: 'root' })
 export class RadarQuestionsService {
-  private readonly questionsSignal = signal<RadarQuestion[]>([]);
-  readonly questions = this.questionsSignal.asReadonly();
+  private readonly $questionsSignal = signal<RadarQuestion[]>([]);
+  readonly $questions = this.$questionsSignal.asReadonly();
   private nextRadarQuestionId = 1;
 
   constructor() {
@@ -30,9 +30,9 @@ export class RadarQuestionsService {
   addRadarQuestion(center: QuestionCenter): void {
     const questionId = `radar-${this.nextRadarQuestionId++}`;
     const color =
-      RADAR_COLOR_PALETTE[this.questionsSignal().length % RADAR_COLOR_PALETTE.length];
+      RADAR_COLOR_PALETTE[this.$questionsSignal().length % RADAR_COLOR_PALETTE.length];
 
-    this.questionsSignal.update((questions) => [
+    this.$questionsSignal.update((questions) => [
       ...questions,
       {
         id: questionId,
@@ -109,7 +109,7 @@ export class RadarQuestionsService {
   }
 
   clearQuestions(): void {
-    this.questionsSignal.set([]);
+    this.$questionsSignal.set([]);
     this.nextRadarQuestionId = 1;
     this.persistQuestions();
   }
@@ -118,7 +118,7 @@ export class RadarQuestionsService {
     questionId: string,
     updater: (question: RadarQuestion) => RadarQuestion
   ): void {
-    this.questionsSignal.update((questions) =>
+    this.$questionsSignal.update((questions) =>
       questions.map((question) =>
         question.id === questionId ? updater(question) : question
       )
@@ -145,7 +145,7 @@ export class RadarQuestionsService {
       }
 
       const restoredQuestions = parsedValue.questions.filter(isRadarQuestion);
-      this.questionsSignal.set(restoredQuestions);
+      this.$questionsSignal.set(restoredQuestions);
       this.nextRadarQuestionId = getNextRadarQuestionId(
         restoredQuestions,
         parsedValue.nextRadarQuestionId
@@ -163,7 +163,7 @@ export class RadarQuestionsService {
 
     const payload: PersistedRadarQuestions = {
       nextRadarQuestionId: this.nextRadarQuestionId,
-      questions: this.questionsSignal()
+      questions: this.$questionsSignal()
     };
 
     storage.setItem(RADAR_QUESTIONS_STORAGE_KEY, JSON.stringify(payload));

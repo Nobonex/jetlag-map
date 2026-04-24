@@ -26,8 +26,8 @@ const NOMINATIM_POLYGON_THRESHOLD = '0.001';
 
 @Injectable({ providedIn: 'root' })
 export class CountryBoundaryService {
-  readonly countryOptions = signal<CountryOption[]>([]);
-  readonly isLoadingCountries = signal(true);
+  readonly $countryOptions = signal<CountryOption[]>([]);
+  readonly $isLoadingCountries = signal(true);
 
   private countryRecords: CountryRecord[] = [];
   private readonly detailedCountryGeometries = new Map<
@@ -128,11 +128,11 @@ export class CountryBoundaryService {
         countries as CountryMetadataRecord[]
       );
       this.countryFeatureCollection = toCountryFeatureCollection(this.countryRecords);
-      this.countryOptions.set(toCountryOptions(this.countryRecords));
+      this.$countryOptions.set(toCountryOptions(this.countryRecords));
     } catch (error) {
       console.error('Failed to load country boundaries.', error);
     } finally {
-      this.isLoadingCountries.set(false);
+      this.$isLoadingCountries.set(false);
     }
   }
 

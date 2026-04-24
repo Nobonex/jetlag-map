@@ -9,25 +9,25 @@
         nzShape="round"
         nzSize="small"
         (click)="toggleSidebar()"
-        [attr.aria-expanded]="isSidebarExpanded()"
+        [attr.aria-expanded]="$isSidebarExpanded()"
         aria-controls="question-sidebar-content"
       >
-        {{ isSidebarExpanded() ? 'Hide questions' : 'Show questions' }}
+        {{ $isSidebarExpanded() ? 'Hide questions' : 'Show questions' }}
       </button>
     </div>
 
     <label class="selector-block">
       <nz-select
         class="country-select"
-        [ngModel]="selectedCountryCode()"
+        [ngModel]="$selectedCountryCode()"
         (ngModelChange)="onSelectedCountryChange($event)"
         [nzAllowClear]="true"
-        [nzDisabled]="isLoadingCountries()"
-        [nzLoading]="isLoadingCountries()"
+        [nzDisabled]="$isLoadingCountries()"
+        [nzLoading]="$isLoadingCountries()"
         [nzShowSearch]="true"
         nzPlaceHolder="Select a country"
       >
-        @for (country of countryOptions(); track country.code) {
+        @for (country of $countryOptions(); track country.code) {
           <nz-option [nzLabel]="country.name" [nzValue]="country.code"></nz-option>
         }
       </nz-select>
@@ -38,15 +38,15 @@
     <aside
       #questionSidebar
       class="question-sidebar"
-      [class.is-collapsed]="!isSidebarExpanded()"
+      [class.is-collapsed]="!$isSidebarExpanded()"
       aria-label="JetLag questions sidebar"
     >
       <div
         id="question-sidebar-content"
         class="sidebar-content"
-        [attr.aria-hidden]="!isSidebarExpanded()"
+        [attr.aria-hidden]="!$isSidebarExpanded()"
       >
-        <app-questions-sidebar [questions]="radarQuestions()" />
+        <app-questions-sidebar [questions]="$radarQuestions()" />
       </div>
     </aside>
 
@@ -87,7 +87,7 @@
         </ul>
       </nz-dropdown-menu>
 
-      @if (contextMenuPosition(); as menuPosition) {
+      @if ($contextMenuPosition(); as menuPosition) {
         <button
           type="button"
           class="map-context-menu-backdrop"
