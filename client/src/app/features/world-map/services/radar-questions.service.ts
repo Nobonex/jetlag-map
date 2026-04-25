@@ -1,7 +1,7 @@
 import { Injectable, signal } from '@angular/core';
 
+import type { QuestionCenter } from '../models/question.model';
 import type {
-  QuestionCenter,
   RadarMode,
   RadarQuestion
 } from '../models/radar-question.model';
@@ -37,6 +37,7 @@ export class RadarQuestionsService {
       {
         id: questionId,
         color,
+        type: 'radar',
         isCollapsed: false,
         isLocked: false,
         center,

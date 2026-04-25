@@ -1,7 +1,4 @@
-export interface QuestionCenter {
-  lat: number;
-  lng: number;
-}
+import type { Question } from './question.model';
 
 export type RadarMode = 'inside' | 'outside';
 
@@ -10,15 +7,9 @@ export interface RadarQuestionSettings {
   radiusKm: number;
 }
 
-export interface RadarQuestion {
-  id: string;
-  color: string;
-  isCollapsed: boolean;
-  isLocked: boolean;
-  center: QuestionCenter;
+export interface RadarQuestion extends Question {
   applied: RadarQuestionSettings;
   draft: RadarQuestionSettings;
-  title?: string;
 }
 
 export function isRadarQuestionDirty(question: RadarQuestion): boolean {

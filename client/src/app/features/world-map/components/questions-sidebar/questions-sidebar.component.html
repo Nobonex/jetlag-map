@@ -7,13 +7,7 @@
     <app-radar-question-card
       [question]="question"
       [index]="index"
-      (draftModeChange)="onDraftModeChange($event)"
-      (draftRadiusChange)="onDraftRadiusChange($event)"
-      (apply)="onApply($event)"
-      (toggleCollapsed)="onToggleCollapsed($event)"
-      (toggleLocked)="onToggleLocked($event)"
       (deleteRequest)="onDeleteRequest($event)"
-      (titleChange)="onTitleChange($event)"
     />
   }
 } @else {

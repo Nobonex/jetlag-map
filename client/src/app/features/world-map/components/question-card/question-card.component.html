@@ -1,0 +1,80 @@
+<div class="sidebar-section question-card">
+  <div class="question-card-header">
+    <div class="question-card-meta">
+      <span
+        class="question-color-swatch"
+        [style.background]="question.color"
+        aria-hidden="true"
+      ></span>
+      <div class="question-card-meta-content">
+        <span class="sidebar-label">{{ typeLabel }} {{ index + 1 }}</span>
+      </div>
+    </div>
+    <div class="question-card-actions">
+      <button
+        type="button"
+        nz-button
+        nzSize="small"
+        nzType="text"
+        (click)="onToggleCollapsed()"
+      >
+        {{ question.isCollapsed ? 'Expand' : 'Collapse' }}
+      </button>
+      <button
+        type="button"
+        nz-button
+        nzSize="small"
+        [nzType]="question.isLocked ? 'default' : 'text'"
+        (click)="onToggleLocked()"
+      >
+        {{ question.isLocked ? 'Unlock' : 'Lock' }}
+      </button>
+      @if (!question.isLocked) {
+        <button
+          type="button"
+          nz-button
+          nzSize="small"
+          nzType="text"
+          nzDanger
+          (click)="onDelete()"
+          title="Delete question"
+        >
+          <span nz-icon nzType="delete"></span>
+        </button>
+      }
+    </div>
+  </div>
+
+  @if (isEditingTitle) {
+    <input
+      #titleInput
+      class="question-card-title-input"
+      [(ngModel)]="draftTitle"
+      (blur)="onTitleBlur()"
+      (keydown)="onTitleKeydown($event)"
+    />
+  } @else {
+    <div class="question-card-title-row">
+      <h3 class="question-card-title">{{ question.title ?? typeLabel }}</h3>
+      @if (!question.isLocked && !question.isCollapsed) {
+        <button
+          type="button"
+          class="question-title-edit-btn"
+          nz-button
+          nzSize="small"
+          nzType="text"
+          (click)="startTitleEdit()"
+          title="Edit name"
+        >
+          <span nz-icon nzType="edit"></span>
+        </button>
+      }
+    </div>
+  }
+
+  @if (!question.isCollapsed) {
+    <div class="question-card-body" [class.is-locked]="question.isLocked">
+      <ng-content></ng-content>
+    </div>
+  }
+</div>

@@ -10,7 +10,7 @@ import { RadarQuestionsService } from '../../services/radar-questions.service';
   imports: [RadarQuestionCardComponent],
   templateUrl: './questions-sidebar.component.html',
   styleUrl: './questions-sidebar.component.less',
-  changeDetection: ChangeDetectionStrategy.OnPush
+  changeDetection: ChangeDetectionStrategy.OnPush,
 })
 export class QuestionsSidebarComponent {
   @Input({ required: true }) questions: RadarQuestion[] = [];
@@ -18,44 +18,14 @@ export class QuestionsSidebarComponent {
   private readonly radarQuestionsService = inject(RadarQuestionsService);
   private readonly modalService = inject(NzModalService);
 
-  protected onDraftModeChange(event: {
-    questionId: string;
-    mode: 'inside' | 'outside';
-  }): void {
-    this.radarQuestionsService.updateDraftMode(event.questionId, event.mode);
-  }
-
-  protected onDraftRadiusChange(event: {
-    questionId: string;
-    radiusKm: number | null;
-  }): void {
-    this.radarQuestionsService.updateDraftRadius(event.questionId, event.radiusKm);
-  }
-
-  protected onApply(questionId: string): void {
-    this.radarQuestionsService.applyQuestion(questionId);
-  }
-
-  protected onToggleCollapsed(questionId: string): void {
-    this.radarQuestionsService.toggleQuestionCollapsed(questionId);
-  }
-
-  protected onToggleLocked(questionId: string): void {
-    this.radarQuestionsService.toggleQuestionLock(questionId);
-  }
-
   protected onDeleteRequest(questionId: string): void {
     this.modalService.confirm({
       nzTitle: 'Delete this question?',
-      nzContent: 'This will remove the radar question from the map.',
+      nzContent: 'This will remove the question from the map.',
       nzOkText: 'Delete',
       nzOkDanger: true,
       nzCancelText: 'Cancel',
       nzOnOk: () => this.radarQuestionsService.deleteQuestion(questionId),
     });
-  }
-
-  protected onTitleChange(event: { questionId: string; title: string }): void {
-    this.radarQuestionsService.updateQuestionTitle(event.questionId, event.title);
   }
 }
