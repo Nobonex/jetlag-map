@@ -54,4 +54,8 @@ export class QuestionsSidebarComponent {
       nzOnOk: () => this.radarQuestionsService.deleteQuestion(questionId),
     });
   }
+
+  protected onTitleChange(event: { questionId: string; title: string }): void {
+    this.radarQuestionsService.updateQuestionTitle(event.questionId, event.title);
+  }
 }

@@ -18,6 +18,7 @@ export interface RadarQuestion {
   center: QuestionCenter;
   applied: RadarQuestionSettings;
   draft: RadarQuestionSettings;
+  title?: string;
 }
 
 export function isRadarQuestionDirty(question: RadarQuestion): boolean {

@@ -40,6 +40,7 @@ export class RadarQuestionsService {
         isCollapsed: false,
         isLocked: false,
         center,
+        title: 'Radar',
         applied: {
           mode: 'inside',
           radiusKm: DEFAULT_RADAR_RADIUS_KM
@@ -105,6 +106,14 @@ export class RadarQuestionsService {
     this.updateQuestion(questionId, (question) => ({
       ...question,
       center
+    }));
+  }
+
+  updateQuestionTitle(questionId: string, title: string): void {
+    const trimmed = title.trim();
+    this.updateQuestion(questionId, (question) => ({
+      ...question,
+      title: trimmed.length > 0 ? trimmed : 'Radar',
     }));
   }
 
