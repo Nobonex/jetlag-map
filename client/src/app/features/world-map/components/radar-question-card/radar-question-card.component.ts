@@ -1,6 +1,7 @@
 import { ChangeDetectionStrategy, Component, EventEmitter, Input, Output } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { NzButtonModule } from 'ng-zorro-antd/button';
+import { NzIconModule } from 'ng-zorro-antd/icon';
 import { NzInputNumberModule } from 'ng-zorro-antd/input-number';
 import { NzRadioModule } from 'ng-zorro-antd/radio';
 
@@ -12,7 +13,7 @@ import {
 
 @Component({
   selector: 'app-radar-question-card',
-  imports: [FormsModule, NzButtonModule, NzInputNumberModule, NzRadioModule],
+  imports: [FormsModule, NzButtonModule, NzIconModule, NzInputNumberModule, NzRadioModule],
   templateUrl: './radar-question-card.component.html',
   styleUrl: './radar-question-card.component.less',
   changeDetection: ChangeDetectionStrategy.OnPush
@@ -32,6 +33,7 @@ export class RadarQuestionCardComponent {
   @Output() readonly apply = new EventEmitter<string>();
   @Output() readonly toggleCollapsed = new EventEmitter<string>();
   @Output() readonly toggleLocked = new EventEmitter<string>();
+  @Output() readonly deleteRequest = new EventEmitter<string>();
 
   protected isDirty(): boolean {
     return isRadarQuestionDirty(this.question);
@@ -61,5 +63,9 @@ export class RadarQuestionCardComponent {
 
   protected onToggleLocked(): void {
     this.toggleLocked.emit(this.question.id);
+  }
+
+  protected onDelete(): void {
+    this.deleteRequest.emit(this.question.id);
   }
 }

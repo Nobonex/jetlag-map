@@ -79,7 +79,7 @@
         <ul nz-menu>
           <li
             nz-menu-item
-            [nzDisabled]="!canClearSavedData()"
+            [nzDisabled]="!$canClearSavedData()"
             (click)="confirmClearQuestions()"
           >
             Clear saved data

@@ -1,4 +1,5 @@
 import { ChangeDetectionStrategy, Component, Input, inject } from '@angular/core';
+import { NzModalService } from 'ng-zorro-antd/modal';
 
 import { RadarQuestionCardComponent } from '../radar-question-card/radar-question-card.component';
 import type { RadarQuestion } from '../../models/radar-question.model';
@@ -15,6 +16,7 @@ export class QuestionsSidebarComponent {
   @Input({ required: true }) questions: RadarQuestion[] = [];
 
   private readonly radarQuestionsService = inject(RadarQuestionsService);
+  private readonly modalService = inject(NzModalService);
 
   protected onDraftModeChange(event: {
     questionId: string;
@@ -40,5 +42,16 @@ export class QuestionsSidebarComponent {
 
   protected onToggleLocked(questionId: string): void {
     this.radarQuestionsService.toggleQuestionLock(questionId);
+  }
+
+  protected onDeleteRequest(questionId: string): void {
+    this.modalService.confirm({
+      nzTitle: 'Delete this question?',
+      nzContent: 'This will remove the radar question from the map.',
+      nzOkText: 'Delete',
+      nzOkDanger: true,
+      nzCancelText: 'Cancel',
+      nzOnOk: () => this.radarQuestionsService.deleteQuestion(questionId),
+    });
   }
 }

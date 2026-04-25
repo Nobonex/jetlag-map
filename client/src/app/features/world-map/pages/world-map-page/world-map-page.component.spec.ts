@@ -82,7 +82,7 @@ describe('WorldMapPageComponent', () => {
     fixture.detectChanges();
     await fixture.whenStable();
 
-    expect(fixture.componentInstance['selectedCountryCode']()).toBe('AFG');
+    expect(fixture.componentInstance['$selectedCountryCode']()).toBe('AFG');
   });
 
   it('should remove an invalid persisted selected country', async () => {

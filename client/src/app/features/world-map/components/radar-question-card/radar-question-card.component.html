@@ -31,6 +31,19 @@
       >
         {{ question.isLocked ? 'Unlock' : 'Lock' }}
       </button>
+      @if (!question.isLocked) {
+        <button
+          type="button"
+          nz-button
+          nzSize="small"
+          nzType="text"
+          nzDanger
+          (click)="onDelete()"
+          title="Delete question"
+        >
+          <span nz-icon nzType="delete"></span>
+        </button>
+      }
     </div>
   </div>
 

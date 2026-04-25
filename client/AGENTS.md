@@ -78,13 +78,6 @@ The application uses the following top-level folder structure inside `src/app/`:
 
 - `core/` — application-wide singletons: config, layout, providers (interceptors, telemetry).
 - `features/` — feature modules. Each feature has its own sub-folder containing page components and feature-specific components.
+  - A feature folder is sub-divided into a pages, components, and services folder based on needs
 - `shared/` — reusable building blocks shared across features: components, directives, and utilities.
 
-### Async state: `TResult<T, TError>`
-
-Use the `TResult` pattern (from `@app/core/results`) to represent the loading/success/error lifecycle of async
-operations:
-
-- `useResultState<T>()` — creates an idle result state.
-- `useLoadingResultState<T>()` — creates an initial loading state.
-- `withLoadingResultState` — RxJS operator that maps an observable into a `TResult` stream.

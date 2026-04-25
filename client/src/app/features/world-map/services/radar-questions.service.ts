@@ -108,6 +108,11 @@ export class RadarQuestionsService {
     }));
   }
 
+  deleteQuestion(questionId: string): void {
+    this.$questionsSignal.update((questions) => questions.filter((q) => q.id !== questionId));
+    this.persistQuestions();
+  }
+
   clearQuestions(): void {
     this.$questionsSignal.set([]);
     this.nextRadarQuestionId = 1;
