@@ -3,10 +3,12 @@ export interface QuestionCenter {
   lng: number;
 }
 
+export type QuestionType = 'radar' | 'thermometer';
+
 export interface BaseQuestion {
   id: string;
   color: string;
-  type: 'radar';
+  type: QuestionType;
   isCollapsed: boolean;
   isLocked: boolean;
   title?: string;

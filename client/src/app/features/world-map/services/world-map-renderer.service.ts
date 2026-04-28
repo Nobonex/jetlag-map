@@ -1,19 +1,24 @@
 import { Injectable } from '@angular/core';
-import type { FeatureCollection, MultiPolygon, Polygon } from 'geojson';
+import type { Feature, FeatureCollection, MultiPolygon, Polygon } from 'geojson';
 import * as L from 'leaflet';
 
 import {
   WORLD_MAP_DEFAULT_BOUNDS,
   WORLD_MAP_FIT_PADDING_BOTTOM_RIGHT,
-  WORLD_MAP_HEADER_HEIGHT,
   WORLD_MAP_MAX_BOUNDS,
   WORLD_MAP_MAX_SELECTION_ZOOM,
 } from '../constants/world-map.constants';
-import type { RadarQuestion } from '../models/radar-question.model';
+import type { GameQuestion } from '../models/radar-question.model';
+import { isRadarQuestion, isThermometerQuestion } from '../models/radar-question.model';
 import { buildOutsideMask, intersectGeometry, subtractGeometry } from '../utils/map-mask.util';
 import {
   createCirclePolygon,
   createRadarMarkerIcon,
+  createThermometerAreaPolygon,
+  createThermometerEndIcon,
+  createThermometerStartIcon,
+  getBisectorPoints,
+  getBoundingBox,
   getRadarQuestionBounds,
   toPolygonFeatureCollection,
 } from '../utils/geometry.util';
@@ -26,8 +31,7 @@ export class WorldMapRendererService {
   private map?: L.Map;
   private allCountriesLayer?: L.GeoJSON;
   private activeCountryLayer?: L.LayerGroup;
-  private radarLayer?: L.LayerGroup;
-  private suppressNextMapFit = false;
+  private questionLayer?: L.LayerGroup;
 
   initializeMap(container: HTMLElement): void {
     if (this.map) {
@@ -60,27 +64,25 @@ export class WorldMapRendererService {
     this.map?.invalidateSize();
   }
 
-  suppressNextFit(): void {
-    this.suppressNextMapFit = true;
-  }
-
   renderMapState(
     activeCountryGeometry: FeatureCollection<Polygon | MultiPolygon> | null,
     worldFeatureCollection: FeatureCollection<Polygon | MultiPolygon>,
-    radarQuestions: RadarQuestion[],
+    questions: GameQuestion[],
     headerHeight: number,
-    onQuestionDragEnd?: (questionId: string, center: { lat: number; lng: number }) => void,
+    shouldFitMap: boolean,
+    onQuestionDragEnd?: (
+      questionId: string,
+      point: { lat: number; lng: number },
+      which: 'center' | 'start' | 'end',
+    ) => void,
   ): void {
     if (!this.map) {
       return;
     }
 
-    const shouldFitMap = !this.suppressNextMapFit;
-    this.suppressNextMapFit = false;
-
     this.allCountriesLayer?.removeFrom(this.map);
     this.activeCountryLayer?.removeFrom(this.map);
-    this.radarLayer?.removeFrom(this.map);
+    this.questionLayer?.removeFrom(this.map);
 
     if (!activeCountryGeometry) {
       if (worldFeatureCollection.features.length > 0) {
@@ -95,9 +97,9 @@ export class WorldMapRendererService {
         }).addTo(this.map);
       }
 
-      this.renderRadarLayer(null, radarQuestions, onQuestionDragEnd);
+      this.renderQuestionLayer(null, questions, onQuestionDragEnd);
       if (shouldFitMap) {
-        this.fitBounds(this.getRadarQuestionsBounds(radarQuestions) ?? WORLD_MAP_DEFAULT_BOUNDS, undefined, headerHeight);
+        this.fitBounds(this.getQuestionsBounds(questions) ?? WORLD_MAP_DEFAULT_BOUNDS, undefined, headerHeight);
       }
       return;
     }
@@ -125,9 +127,9 @@ export class WorldMapRendererService {
     } as L.GeoJSONOptions & L.PolylineOptions);
 
     this.activeCountryLayer = L.layerGroup([activeOutlineLayer]).addTo(this.map);
-    this.renderRadarLayer(activeCountryGeometry, radarQuestions, onQuestionDragEnd);
+    this.renderQuestionLayer(activeCountryGeometry, questions, onQuestionDragEnd);
 
-    const playableAreaBounds = this.getPlayableAreaBounds(activeCountryGeometry, radarQuestions);
+    const playableAreaBounds = this.getPlayableAreaBounds(activeCountryGeometry, questions);
     if (shouldFitMap) {
       this.fitBounds(
         playableAreaBounds ?? activeOutlineLayer.getBounds(),
@@ -153,24 +155,28 @@ export class WorldMapRendererService {
     return this.map;
   }
 
-  private renderRadarLayer(
+  private renderQuestionLayer(
     activeCountryGeometry: FeatureCollection<Polygon | MultiPolygon> | null,
-    questions: RadarQuestion[],
-    onQuestionDragEnd?: (questionId: string, center: { lat: number; lng: number }) => void,
+    questions: GameQuestion[],
+    onQuestionDragEnd?: (
+      questionId: string,
+      point: { lat: number; lng: number },
+      which: 'center' | 'start' | 'end',
+    ) => void,
   ): void {
     if (!this.map || questions.length === 0) {
       return;
     }
 
-    const radarLayers: L.Layer[] = [];
+    const layers: L.Layer[] = [];
 
     if (activeCountryGeometry) {
       const playableArea = this.buildPlayableArea(activeCountryGeometry, questions);
       if (playableArea && playableArea.features.length > 0) {
-        const radarMask = subtractGeometry(activeCountryGeometry, playableArea);
-        if (radarMask.features.length > 0) {
-          radarLayers.push(
-            L.geoJSON(radarMask, {
+        const mask = subtractGeometry(activeCountryGeometry, playableArea);
+        if (mask.features.length > 0) {
+          layers.push(
+            L.geoJSON(mask, {
               style: () => ({
                 stroke: false,
                 fillColor: '#d2dae1',
@@ -185,44 +191,144 @@ export class WorldMapRendererService {
     }
 
     for (const question of questions) {
-      const center = L.latLng(question.center.lat, question.center.lng);
-      const radiusMeters = question.applied.radiusKm * 1000;
-
-      const radarCircle = L.circle(center, {
-        radius: radiusMeters,
-        color: question.color,
-        weight: 2,
-        opacity: 0.95,
-        fillColor: question.color,
-        fillOpacity: 0,
-        interactive: false,
-      });
-
-      const radarMarker = L.marker(center, {
-        draggable: !question.isLocked,
-        icon: createRadarMarkerIcon(question.color),
-      });
-
-      if (!question.isLocked && onQuestionDragEnd) {
-        radarMarker.on('drag', () => {
-          radarCircle.setLatLng(radarMarker.getLatLng());
-        });
-
-        radarMarker.on('dragend', () => {
-          const nextCenter = radarMarker.getLatLng();
-          onQuestionDragEnd(question.id, { lat: nextCenter.lat, lng: nextCenter.lng });
-        });
+      if (isRadarQuestion(question)) {
+        this.renderRadarQuestion(layers, question, onQuestionDragEnd);
+      } else if (isThermometerQuestion(question)) {
+        this.renderThermometerQuestion(layers, question, onQuestionDragEnd);
       }
-
-      radarLayers.push(radarCircle, radarMarker);
     }
 
-    this.radarLayer = L.layerGroup(radarLayers).addTo(this.map);
+    this.questionLayer = L.layerGroup(layers).addTo(this.map);
+  }
+
+  private renderRadarQuestion(
+    layers: L.Layer[],
+    question: import('../models/radar-question.model').RadarQuestion,
+    onQuestionDragEnd?: (
+      questionId: string,
+      point: { lat: number; lng: number },
+      which: 'center' | 'start' | 'end',
+    ) => void,
+  ): void {
+    const center = L.latLng(question.center.lat, question.center.lng);
+    const radiusMeters = question.applied.radiusKm * 1000;
+
+    const radarCircle = L.circle(center, {
+      radius: radiusMeters,
+      color: question.color,
+      weight: 2,
+      opacity: 0.95,
+      fillColor: question.color,
+      fillOpacity: 0,
+      interactive: false,
+    });
+
+    const radarMarker = L.marker(center, {
+      draggable: !question.isLocked,
+      icon: createRadarMarkerIcon(question.color),
+    });
+
+    if (!question.isLocked && onQuestionDragEnd) {
+      radarMarker.on('drag', () => {
+        radarCircle.setLatLng(radarMarker.getLatLng());
+      });
+
+      radarMarker.on('dragend', () => {
+        const nextCenter = radarMarker.getLatLng();
+        onQuestionDragEnd(question.id, { lat: nextCenter.lat, lng: nextCenter.lng }, 'center');
+      });
+    }
+
+    layers.push(radarCircle, radarMarker);
+  }
+
+  private renderThermometerQuestion(
+    layers: L.Layer[],
+    question: import('../models/thermometer-question.model').ThermometerQuestion,
+    onQuestionDragEnd?: (
+      questionId: string,
+      point: { lat: number; lng: number },
+      which: 'center' | 'start' | 'end',
+    ) => void,
+  ): void {
+    const start = L.latLng(question.start.lat, question.start.lng);
+    const end = L.latLng(question.end.lat, question.end.lng);
+
+    // Draw line between start and end
+    const line = L.polyline([start, end], {
+      color: question.color,
+      weight: 2,
+      opacity: 0.95,
+      interactive: false,
+    });
+
+    // Draw perpendicular bisector so users can see the division line
+    const bisector = getBisectorPoints(question.start, question.end, 10);
+    const bisectorLine = L.polyline(
+      [L.latLng(bisector.p1[1], bisector.p1[0]), L.latLng(bisector.p2[1], bisector.p2[0])],
+      {
+        color: question.color,
+        weight: 2,
+        opacity: 0.6,
+        dashArray: '6, 6',
+        interactive: false,
+      },
+    );
+
+    // Start marker (A)
+    const startMarker = L.marker(start, {
+      draggable: !question.isLocked,
+      icon: createThermometerStartIcon(question.color),
+    });
+
+    // End marker (B)
+    const endMarker = L.marker(end, {
+      draggable: !question.isLocked,
+      icon: createThermometerEndIcon(question.color),
+    });
+
+    if (!question.isLocked && onQuestionDragEnd) {
+      const updateBisector = (): void => {
+        const s = startMarker.getLatLng();
+        const e = endMarker.getLatLng();
+        const nextBisector = getBisectorPoints(
+          { lat: s.lat, lng: s.lng },
+          { lat: e.lat, lng: e.lng },
+          10,
+        );
+        bisectorLine.setLatLngs([
+          L.latLng(nextBisector.p1[1], nextBisector.p1[0]),
+          L.latLng(nextBisector.p2[1], nextBisector.p2[0]),
+        ]);
+      };
+
+      startMarker.on('drag', () => {
+        line.setLatLngs([startMarker.getLatLng(), endMarker.getLatLng()]);
+        updateBisector();
+      });
+
+      startMarker.on('dragend', () => {
+        const nextCenter = startMarker.getLatLng();
+        onQuestionDragEnd(question.id, { lat: nextCenter.lat, lng: nextCenter.lng }, 'start');
+      });
+
+      endMarker.on('drag', () => {
+        line.setLatLngs([startMarker.getLatLng(), endMarker.getLatLng()]);
+        updateBisector();
+      });
+
+      endMarker.on('dragend', () => {
+        const nextCenter = endMarker.getLatLng();
+        onQuestionDragEnd(question.id, { lat: nextCenter.lat, lng: nextCenter.lng }, 'end');
+      });
+    }
+
+    layers.push(line, bisectorLine, startMarker, endMarker);
   }
 
   private buildPlayableArea(
     activeCountryGeometry: FeatureCollection<Polygon | MultiPolygon>,
-    questions: RadarQuestion[],
+    questions: GameQuestion[],
   ): FeatureCollection<Polygon> | null {
     if (questions.length === 0) {
       return null;
@@ -230,17 +336,47 @@ export class WorldMapRendererService {
 
     let playableArea = toPolygonFeatureCollection(activeCountryGeometry);
 
-    for (const question of questions) {
-      const radarArea = {
-        type: 'Feature' as const,
-        properties: {},
-        geometry: createCirclePolygon(L.latLng(question.center.lat, question.center.lng), question.applied.radiusKm * 1000),
-      };
+    const hasThermometer = questions.some(isThermometerQuestion);
+    const bbox = hasThermometer ? getBoundingBox(activeCountryGeometry) : null;
 
-      playableArea =
-        question.applied.mode === 'inside'
-          ? intersectGeometry(playableArea, radarArea)
-          : subtractGeometry(playableArea, radarArea);
+    for (const question of questions) {
+      if (isRadarQuestion(question)) {
+        const radarArea = {
+          type: 'Feature' as const,
+          properties: {},
+          geometry: createCirclePolygon(
+            L.latLng(question.center.lat, question.center.lng),
+            question.applied.radiusKm * 1000,
+          ),
+        };
+
+        playableArea =
+          question.applied.mode === 'inside'
+            ? intersectGeometry(playableArea, radarArea)
+            : subtractGeometry(playableArea, radarArea);
+      } else if (isThermometerQuestion(question)) {
+        if (!bbox) {
+          continue;
+        }
+
+        const thermometerArea = {
+          type: 'Feature' as const,
+          properties: {},
+          geometry: createThermometerAreaPolygon(
+            question.start,
+            question.end,
+            question.applied.mode,
+            {
+              minLng: bbox.minLng - 2,
+              maxLng: bbox.maxLng + 2,
+              minLat: bbox.minLat - 2,
+              maxLat: bbox.maxLat + 2,
+            },
+          ),
+        };
+
+        playableArea = intersectGeometry(playableArea, thermometerArea);
+      }
 
       if (playableArea.features.length === 0) {
         return playableArea;
@@ -250,9 +386,33 @@ export class WorldMapRendererService {
     return playableArea;
   }
 
+  private buildBboxFeature(
+    geometry: FeatureCollection<Polygon | MultiPolygon>,
+  ): Feature<Polygon> {
+    const bbox = getBoundingBox(geometry);
+    const margin = 2;
+
+    return {
+      type: 'Feature',
+      properties: {},
+      geometry: {
+        type: 'Polygon',
+        coordinates: [
+          [
+            [bbox.minLng - margin, bbox.minLat - margin],
+            [bbox.maxLng + margin, bbox.minLat - margin],
+            [bbox.maxLng + margin, bbox.maxLat + margin],
+            [bbox.minLng - margin, bbox.maxLat + margin],
+            [bbox.minLng - margin, bbox.minLat - margin],
+          ],
+        ],
+      },
+    };
+  }
+
   private getPlayableAreaBounds(
     activeCountryGeometry: FeatureCollection<Polygon | MultiPolygon>,
-    questions: RadarQuestion[],
+    questions: GameQuestion[],
   ): L.LatLngBounds | null {
     const playableArea = this.buildPlayableArea(activeCountryGeometry, questions);
     if (!playableArea || playableArea.features.length === 0) {
@@ -263,16 +423,31 @@ export class WorldMapRendererService {
     return bounds.isValid() ? bounds : null;
   }
 
-  private getRadarQuestionsBounds(questions: RadarQuestion[]): L.LatLngBounds | null {
+  private getQuestionsBounds(questions: GameQuestion[]): L.LatLngBounds | null {
     if (questions.length === 0) {
       return null;
     }
 
-    const [firstQuestion, ...remainingQuestions] = questions;
-    const bounds = getRadarQuestionBounds(firstQuestion);
+    let bounds: L.LatLngBounds | null = null;
 
-    for (const question of remainingQuestions) {
-      bounds.extend(getRadarQuestionBounds(question));
+    for (const question of questions) {
+      if (isRadarQuestion(question)) {
+        const questionBounds = getRadarQuestionBounds(question);
+        if (!bounds) {
+          bounds = questionBounds;
+        } else {
+          bounds.extend(questionBounds);
+        }
+      } else if (isThermometerQuestion(question)) {
+        const start = L.latLng(question.start.lat, question.start.lng);
+        const end = L.latLng(question.end.lat, question.end.lng);
+        if (!bounds) {
+          bounds = L.latLngBounds(start, end);
+        } else {
+          bounds.extend(start);
+          bounds.extend(end);
+        }
+      }
     }
 
     return bounds;

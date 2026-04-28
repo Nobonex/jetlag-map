@@ -1,0 +1,39 @@
+<app-question-card
+  [question]="question"
+  [index]="index"
+  typeLabel="Thermo"
+  (toggleCollapsed)="onToggleCollapsed($event)"
+  (toggleLocked)="onToggleLocked($event)"
+  (deleteRequest)="onDeleteRequest($event)"
+  (titleChange)="onTitleChange($event)"
+>
+  <div class="question-field">
+    <span class="question-field-label">Direction</span>
+    <div class="thermometer-buttons">
+      <button
+        type="button"
+        nz-button
+        [nzType]="question.applied.mode === 'warmer' ? 'primary' : 'default'"
+        [disabled]="question.isLocked"
+        (click)="onModeChange('warmer')"
+      >
+        Warmer
+      </button>
+      <button
+        type="button"
+        nz-button
+        [nzType]="question.applied.mode === 'colder' ? 'primary' : 'default'"
+        [disabled]="question.isLocked"
+        (click)="onModeChange('colder')"
+      >
+        Colder
+      </button>
+    </div>
+  </div>
+
+  @if (question.isLocked) {
+    <p class="question-lock-note">
+      Locked: inputs are disabled and the markers cannot be moved.
+    </p>
+  }
+</app-question-card>

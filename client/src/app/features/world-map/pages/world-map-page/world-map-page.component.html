@@ -46,7 +46,7 @@
         class="sidebar-content"
         [attr.aria-hidden]="!$isSidebarExpanded()"
       >
-        <app-questions-sidebar [questions]="$radarQuestions()" />
+        <app-questions-sidebar [questions]="$questions()" />
       </div>
     </aside>
 
@@ -112,6 +112,15 @@
             (click)="addRadarQuestion()"
           >
             Radar
+          </button>
+          <button
+            type="button"
+            class="map-context-menu-action"
+            nz-button
+            nzType="text"
+            (click)="addThermometerQuestion()"
+          >
+            Thermometer
           </button>
         </nz-card>
       }

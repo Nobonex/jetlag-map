@@ -21,13 +21,13 @@ import { NzSelectModule } from 'ng-zorro-antd/select';
 import { NzTypographyModule } from 'ng-zorro-antd/typography';
 
 import { CountryBoundaryService } from '../../services/country-boundary.service';
-import { RadarQuestionsService } from '../../services/radar-questions.service';
+import { QuestionsService } from '../../services/questions.service';
 import { WorldMapRendererService } from '../../services/world-map-renderer.service';
 import { WorldMapStateService } from '../../services/world-map-state.service';
 import { QuestionsSidebarComponent } from '../../components/questions-sidebar/questions-sidebar.component';
 
 const CONTEXT_MENU_WIDTH = 220;
-const CONTEXT_MENU_HEIGHT = 52;
+const CONTEXT_MENU_HEIGHT = 90;
 const CONTEXT_MENU_MARGIN = 12;
 const LONG_PRESS_DURATION_MS = 550;
 const LONG_PRESS_MOVE_THRESHOLD_PX = 10;
@@ -58,7 +58,7 @@ export class WorldMapPageComponent implements AfterViewInit, OnDestroy {
   private static readonly mobileSidebarMediaQuery = '(max-width: 720px)';
 
   private readonly countryBoundaryService = inject(CountryBoundaryService);
-  private readonly radarQuestionsService = inject(RadarQuestionsService);
+  private readonly questionsService = inject(QuestionsService);
   private readonly worldMapStateService = inject(WorldMapStateService);
   private readonly worldMapRendererService = inject(WorldMapRendererService);
   private readonly modalService = inject(NzModalService);
@@ -66,11 +66,11 @@ export class WorldMapPageComponent implements AfterViewInit, OnDestroy {
   protected readonly $isSidebarExpanded = signal(true);
   protected readonly $contextMenuPosition = signal<ContextMenuPosition | null>(null);
   protected readonly $selectedCountryCode = this.worldMapStateService.$selectedCountryCode;
-  protected readonly $radarQuestions = this.radarQuestionsService.$questions;
+  protected readonly $questions = this.questionsService.$questions;
   protected readonly $countryOptions = this.countryBoundaryService.$countryOptions;
   protected readonly $isLoadingCountries = this.countryBoundaryService.$isLoadingCountries;
   protected readonly $canClearSavedData = computed(
-    () => this.$radarQuestions().length > 0 || this.$selectedCountryCode() !== null,
+    () => this.$questions().length > 0 || this.$selectedCountryCode() !== null,
   );
 
   @ViewChild('mapContainer', { static: true })
@@ -95,14 +95,10 @@ export class WorldMapPageComponent implements AfterViewInit, OnDestroy {
     this.syncSidebarExpansion(event.matches);
   };
 
-  private readonly syncRadarQuestionsEffect = effect(() => {
-    this.$radarQuestions();
-    this.triggerRender();
-  });
-
-  private readonly syncSelectedCountryEffect = effect(() => {
+  private readonly syncRenderEffect = effect(() => {
+    this.$questions();
     this.$selectedCountryCode();
-    this.triggerRender();
+    this.triggerRender(false);
   });
 
   async ngAfterViewInit(): Promise<void> {
@@ -110,12 +106,11 @@ export class WorldMapPageComponent implements AfterViewInit, OnDestroy {
     this.initializeMap();
     await this.countryBoundaryService.loadCountries();
     await this.worldMapStateService.restoreSelectedCountry();
-    this.triggerRender();
+    this.triggerRender(true);
   }
 
   ngOnDestroy(): void {
-    void this.syncRadarQuestionsEffect;
-    void this.syncSelectedCountryEffect;
+    void this.syncRenderEffect;
     this.detachResponsiveSidebarListener();
     this.clearLongPressTimer();
     this.worldMapRendererService.destroyMap();
@@ -126,11 +121,12 @@ export class WorldMapPageComponent implements AfterViewInit, OnDestroy {
     this.worldMapStateService.setSelectedCountry(countryCode);
 
     if (!countryCode) {
+      this.triggerRender(true);
       return;
     }
 
     void this.countryBoundaryService.loadDetailedCountryGeometry(countryCode).then(() => {
-      this.triggerRender();
+      this.triggerRender(true);
     });
   }
 
@@ -232,12 +228,28 @@ export class WorldMapPageComponent implements AfterViewInit, OnDestroy {
   }
 
   protected addRadarQuestion(): void {
-    const center = this.contextMenuLatLng ?? this.getRadarQuestionsBounds()?.getCenter();
+    const center = this.contextMenuLatLng ?? this.getQuestionsBounds()?.getCenter();
     if (!center) {
       return;
     }
 
-    this.radarQuestionsService.addRadarQuestion({ lat: center.lat, lng: center.lng });
+    this.questionsService.addRadarQuestion({ lat: center.lat, lng: center.lng });
+    this.closeContextMenu();
+  }
+
+  protected addThermometerQuestion(): void {
+    const start = this.contextMenuLatLng ?? this.getQuestionsBounds()?.getCenter();
+    if (!start) {
+      return;
+    }
+
+    // Place end marker ~0.01 degrees north (~1.1km) so user can easily drag both
+    const end = { lat: start.lat + 0.01, lng: start.lng };
+
+    this.questionsService.addThermometerQuestion(
+      { lat: start.lat, lng: start.lng },
+      { lat: end.lat, lng: end.lng },
+    );
     this.closeContextMenu();
   }
 
@@ -267,7 +279,7 @@ export class WorldMapPageComponent implements AfterViewInit, OnDestroy {
     requestAnimationFrame(() => this.worldMapRendererService.invalidateSize());
   }
 
-  private triggerRender(): void {
+  private triggerRender(shouldFitMap: boolean): void {
     const activeCountry = this.countryBoundaryService.getCountryByCode(this.$selectedCountryCode());
     const activeCountryGeometry = activeCountry
       ? this.countryBoundaryService.getCountryGeometry(activeCountry.code)
@@ -278,17 +290,23 @@ export class WorldMapPageComponent implements AfterViewInit, OnDestroy {
     this.worldMapRendererService.renderMapState(
       activeCountryGeometry,
       worldFeatureCollection,
-      this.$radarQuestions(),
+      this.$questions(),
       headerHeight,
-      (questionId, center) => {
-        this.worldMapRendererService.suppressNextFit();
-        this.radarQuestionsService.updateQuestionCenter(questionId, center);
+      shouldFitMap,
+      (questionId, point, which) => {
+        if (which === 'center') {
+          this.questionsService.updateQuestionCenter(questionId, point);
+        } else if (which === 'start') {
+          this.questionsService.updateThermometerStart(questionId, point);
+        } else if (which === 'end') {
+          this.questionsService.updateThermometerEnd(questionId, point);
+        }
       },
     );
   }
 
-  private getRadarQuestionsBounds(): L.LatLngBounds | null {
-    const questions = this.$radarQuestions();
+  private getQuestionsBounds(): L.LatLngBounds | null {
+    const questions = this.$questions();
     if (questions.length === 0) {
       return null;
     }
@@ -311,7 +329,7 @@ export class WorldMapPageComponent implements AfterViewInit, OnDestroy {
   private clearSavedData(): void {
     this.worldMapStateService.clearSavedData();
     this.closeContextMenu();
-    this.triggerRender();
+    this.triggerRender(true);
   }
 
   private openContextMenu(clientX: number, clientY: number, latLng: L.LatLng): void {

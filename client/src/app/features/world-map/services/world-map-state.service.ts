@@ -1,7 +1,7 @@
 import { Injectable, signal } from '@angular/core';
 
 import { CountryBoundaryService } from './country-boundary.service';
-import { RadarQuestionsService } from './radar-questions.service';
+import { QuestionsService } from './questions.service';
 
 const SELECTED_COUNTRY_STORAGE_KEY = 'jetlag.selected-country.v1';
 
@@ -10,14 +10,14 @@ export class WorldMapStateService {
   readonly $selectedCountryCode = signal<string | null>(null);
 
   private readonly countryBoundaryService: CountryBoundaryService;
-  private readonly radarQuestionsService: RadarQuestionsService;
+  private readonly questionsService: QuestionsService;
 
   constructor(
     countryBoundaryService: CountryBoundaryService,
-    radarQuestionsService: RadarQuestionsService,
+    questionsService: QuestionsService,
   ) {
     this.countryBoundaryService = countryBoundaryService;
-    this.radarQuestionsService = radarQuestionsService;
+    this.questionsService = questionsService;
   }
 
   async restoreSelectedCountry(): Promise<void> {
@@ -41,7 +41,7 @@ export class WorldMapStateService {
   }
 
   clearSavedData(): void {
-    this.radarQuestionsService.clearQuestions();
+    this.questionsService.clearQuestions();
     this.countryBoundaryService.clearDetailedCountryGeometryCache();
     this.$selectedCountryCode.set(null);
     this.persistSelectedCountry(null);

@@ -4,11 +4,22 @@
 
 @if (questions.length > 0) {
   @for (question of questions; track question.id; let index = $index) {
-    <app-radar-question-card
-      [question]="question"
-      [index]="index"
-      (deleteRequest)="onDeleteRequest($event)"
-    />
+    @switch (question.type) {
+      @case ('radar') {
+        <app-radar-question-card
+          [question]="$any(question)"
+          [index]="getTypeIndex($index)"
+          (deleteRequest)="onDeleteRequest($event)"
+        />
+      }
+      @case ('thermometer') {
+        <app-thermometer-question-card
+          [question]="$any(question)"
+          [index]="getTypeIndex($index)"
+          (deleteRequest)="onDeleteRequest($event)"
+        />
+      }
+    }
   }
 } @else {
   <div class="sidebar-section">
