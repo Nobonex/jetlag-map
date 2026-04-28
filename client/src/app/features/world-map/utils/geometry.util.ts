@@ -147,6 +147,67 @@ export function getBisectorPoints(
 }
 
 /**
+ * Returns the two points where the perpendicular bisector of [start, end]
+ * intersects the given bounding-box edges. This gives an edge-to-edge line
+ * that always passes through the midpoint and is guaranteed to span the
+ * full bbox, making the bisector unmistakably visible on the map.
+ */
+export function getBisectorEdgePoints(
+  start: QuestionCenter,
+  end: QuestionCenter,
+  bbox: { minLng: number; maxLng: number; minLat: number; maxLat: number },
+): { p1: [number, number]; p2: [number, number] } {
+  const midLng = (start.lng + end.lng) / 2;
+  const midLat = (start.lat + end.lat) / 2;
+
+  const dx = end.lng - start.lng;
+  const dy = end.lat - start.lat;
+  const len = Math.sqrt(dx * dx + dy * dy) || 1;
+
+  // Bisector direction vector (perpendicular to AB)
+  const dirLng = -dy / len;
+  const dirLat = dx / len;
+
+  const ts: number[] = [];
+  const EPS = 1e-12;
+
+  if (Math.abs(dirLng) > EPS) {
+    ts.push((bbox.minLng - midLng) / dirLng);
+    ts.push((bbox.maxLng - midLng) / dirLng);
+  }
+  if (Math.abs(dirLat) > EPS) {
+    ts.push((bbox.minLat - midLat) / dirLat);
+    ts.push((bbox.maxLat - midLat) / dirLat);
+  }
+
+  const points = ts
+    .map((t) => ({
+      lng: midLng + t * dirLng,
+      lat: midLat + t * dirLat,
+      t,
+    }))
+    .filter(
+      (p) =>
+        p.lng >= bbox.minLng - EPS &&
+        p.lng <= bbox.maxLng + EPS &&
+        p.lat >= bbox.minLat - EPS &&
+        p.lat <= bbox.maxLat + EPS,
+    )
+    .sort((a, b) => a.t - b.t);
+
+  if (points.length < 2) {
+    // Fallback: the bisector is parallel to an edge and completely inside;
+    // use a long fixed extent instead.
+    return getBisectorPoints(start, end, 90);
+  }
+
+  return {
+    p1: [points[0].lng, points[0].lat],
+    p2: [points[points.length - 1].lng, points[points.length - 1].lat],
+  };
+}
+
+/**
  * Builds a bounded half-plane polygon clipped to the given bounding box.
  *
  * The bisector line is the perpendicular bisector of the segment [start, end].

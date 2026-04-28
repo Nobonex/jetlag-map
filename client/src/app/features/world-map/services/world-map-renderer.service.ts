@@ -17,6 +17,7 @@ import {
   createThermometerAreaPolygon,
   createThermometerEndIcon,
   createThermometerStartIcon,
+  getBisectorEdgePoints,
   getBisectorPoints,
   getBoundingBox,
   getRadarQuestionBounds,
@@ -170,6 +171,10 @@ export class WorldMapRendererService {
 
     const layers: L.Layer[] = [];
 
+    const countryBbox = activeCountryGeometry
+      ? getBoundingBox(activeCountryGeometry)
+      : null;
+
     if (activeCountryGeometry) {
       const playableArea = this.buildPlayableArea(activeCountryGeometry, questions);
       if (playableArea && playableArea.features.length > 0) {
@@ -194,7 +199,7 @@ export class WorldMapRendererService {
       if (isRadarQuestion(question)) {
         this.renderRadarQuestion(layers, question, onQuestionDragEnd);
       } else if (isThermometerQuestion(question)) {
-        this.renderThermometerQuestion(layers, question, onQuestionDragEnd);
+        this.renderThermometerQuestion(layers, question, countryBbox, onQuestionDragEnd);
       }
     }
 
@@ -245,6 +250,7 @@ export class WorldMapRendererService {
   private renderThermometerQuestion(
     layers: L.Layer[],
     question: import('../models/thermometer-question.model').ThermometerQuestion,
+    countryBbox: { minLng: number; maxLng: number; minLat: number; maxLat: number } | null,
     onQuestionDragEnd?: (
       questionId: string,
       point: { lat: number; lng: number },
@@ -262,8 +268,10 @@ export class WorldMapRendererService {
       interactive: false,
     });
 
-    // Draw perpendicular bisector so users can see the division line
-    const bisector = getBisectorPoints(question.start, question.end, 10);
+    // Perpendicular bisector: span the full country bbox so it is unmistakably centred
+    const bisector = countryBbox
+      ? getBisectorEdgePoints(question.start, question.end, countryBbox)
+      : getBisectorPoints(question.start, question.end, 90);
     const bisectorLine = L.polyline(
       [L.latLng(bisector.p1[1], bisector.p1[0]), L.latLng(bisector.p2[1], bisector.p2[0])],
       {
@@ -274,6 +282,18 @@ export class WorldMapRendererService {
         interactive: false,
       },
     );
+
+    // Small dot at the midpoint so the centre is unambiguous
+    const midLat = (question.start.lat + question.end.lat) / 2;
+    const midLng = (question.start.lng + question.end.lng) / 2;
+    const midDot = L.circleMarker(L.latLng(midLat, midLng), {
+      radius: 4,
+      color: question.color,
+      weight: 1,
+      fillColor: question.color,
+      fillOpacity: 0.8,
+      interactive: false,
+    });
 
     // Start marker (A)
     const startMarker = L.marker(start, {
@@ -291,15 +311,31 @@ export class WorldMapRendererService {
       const updateBisector = (): void => {
         const s = startMarker.getLatLng();
         const e = endMarker.getLatLng();
-        const nextBisector = getBisectorPoints(
-          { lat: s.lat, lng: s.lng },
-          { lat: e.lat, lng: e.lng },
-          10,
-        );
-        bisectorLine.setLatLngs([
-          L.latLng(nextBisector.p1[1], nextBisector.p1[0]),
-          L.latLng(nextBisector.p2[1], nextBisector.p2[0]),
-        ]);
+        const nextMidLat = (s.lat + e.lat) / 2;
+        const nextMidLng = (s.lng + e.lng) / 2;
+        midDot.setLatLng(L.latLng(nextMidLat, nextMidLng));
+
+        if (countryBbox) {
+          const nextBisector = getBisectorEdgePoints(
+            { lat: s.lat, lng: s.lng },
+            { lat: e.lat, lng: e.lng },
+            countryBbox,
+          );
+          bisectorLine.setLatLngs([
+            L.latLng(nextBisector.p1[1], nextBisector.p1[0]),
+            L.latLng(nextBisector.p2[1], nextBisector.p2[0]),
+          ]);
+        } else {
+          const nextBisector = getBisectorPoints(
+            { lat: s.lat, lng: s.lng },
+            { lat: e.lat, lng: e.lng },
+            90,
+          );
+          bisectorLine.setLatLngs([
+            L.latLng(nextBisector.p1[1], nextBisector.p1[0]),
+            L.latLng(nextBisector.p2[1], nextBisector.p2[0]),
+          ]);
+        }
       };
 
       startMarker.on('drag', () => {
@@ -323,7 +359,7 @@ export class WorldMapRendererService {
       });
     }
 
-    layers.push(line, bisectorLine, startMarker, endMarker);
+    layers.push(line, bisectorLine, midDot, startMarker, endMarker);
   }
 
   private buildPlayableArea(

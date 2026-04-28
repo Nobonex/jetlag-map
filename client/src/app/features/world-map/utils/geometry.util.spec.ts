@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import {
   createThermometerAreaPolygon,
+  getBisectorEdgePoints,
   getBisectorPoints,
   getBoundingBox,
   normalizeLongitude,
@@ -282,6 +283,72 @@ describe('getBisectorPoints', () => {
 
     // Points should be extent units apart in longitude
     expect(Math.abs(p2[0] - p1[0])).toBe(10);
+  });
+});
+
+describe('getBisectorEdgePoints', () => {
+  const testBbox = { minLng: -10, maxLng: 20, minLat: -10, maxLat: 20 };
+
+  it('returns points on opposite bbox edges for a horizontal thermometer', () => {
+    // Horizontal: bisector is vertical at lng = 5
+    const { p1, p2 } = getBisectorEdgePoints(
+      { lat: 0, lng: 0 },
+      { lat: 0, lng: 10 },
+      testBbox,
+    );
+
+    // Bisector should hit the top and bottom edges
+    expect(p1[0]).toBe(p2[0]);
+    expect(p1[0]).toBe(5);
+    const lats = [p1[1], p2[1]].sort((a, b) => a - b);
+    expect(lats[0]).toBe(testBbox.minLat);
+    expect(lats[1]).toBe(testBbox.maxLat);
+  });
+
+  it('returns points on opposite bbox edges for a vertical thermometer', () => {
+    // Vertical: bisector is horizontal at lat = 5
+    const { p1, p2 } = getBisectorEdgePoints(
+      { lat: 0, lng: 5 },
+      { lat: 10, lng: 5 },
+      testBbox,
+    );
+
+    expect(p1[1]).toBe(p2[1]);
+    expect(p1[1]).toBe(5);
+    const lngs = [p1[0], p2[0]].sort((a, b) => a - b);
+    expect(lngs[0]).toBe(testBbox.minLng);
+    expect(lngs[1]).toBe(testBbox.maxLng);
+  });
+
+  it('passes through the midpoint for diagonal thermometers', () => {
+    const { p1, p2 } = getBisectorEdgePoints(
+      { lat: 10, lng: 0 },
+      { lat: 0, lng: 10 },
+      testBbox,
+    );
+
+    const midLng = 5;
+    const midLat = 5;
+
+    // The midpoint should lie on the segment p1->p2 (within tolerance)
+    const t = (midLng - p1[0]) / (p2[0] - p1[0]);
+    const latOnLine = p1[1] + t * (p2[1] - p1[1]);
+    expect(Math.abs(latOnLine - midLat)).toBeLessThan(1e-10);
+  });
+
+  it('keeps returned points inside the bbox', () => {
+    const { p1, p2 } = getBisectorEdgePoints(
+      { lat: 5, lng: 5 },
+      { lat: 7, lng: 8 },
+      testBbox,
+    );
+
+    for (const [lng, lat] of [p1, p2]) {
+      expect(lng).toBeGreaterThanOrEqual(testBbox.minLng);
+      expect(lng).toBeLessThanOrEqual(testBbox.maxLng);
+      expect(lat).toBeGreaterThanOrEqual(testBbox.minLat);
+      expect(lat).toBeLessThanOrEqual(testBbox.maxLat);
+    }
   });
 });
 
