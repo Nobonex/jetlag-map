@@ -288,6 +288,56 @@ export function createThermometerAreaPolygon(
   };
 }
 
+export function extractBisectorSegments(
+  geometry: FeatureCollection<Polygon>,
+  start: QuestionCenter,
+  end: QuestionCenter,
+): Position[][] {
+  const midLng = (start.lng + end.lng) / 2;
+  const midLat = (start.lat + end.lat) / 2;
+  const dx = end.lng - start.lng;
+  const dy = end.lat - start.lat;
+  const len = Math.sqrt(dx * dx + dy * dy) || 1;
+  const ex = dx / len;
+  const ey = dy / len;
+  const lineEpsilon = 1e-6;
+  const seen = new Set<string>();
+  const segments: Position[][] = [];
+
+  const isOnBisector = (lng: number, lat: number): boolean => {
+    const value = ex * (lng - midLng) + ey * (lat - midLat);
+    return Math.abs(value) < lineEpsilon;
+  };
+
+  const normalizeSegmentKey = (a: Position, b: Position): string => {
+    const first = `${a[0].toFixed(6)},${a[1].toFixed(6)}`;
+    const second = `${b[0].toFixed(6)},${b[1].toFixed(6)}`;
+    return first < second ? `${first}|${second}` : `${second}|${first}`;
+  };
+
+  for (const feature of geometry.features) {
+    for (const ring of feature.geometry.coordinates) {
+      for (let index = 0; index < ring.length - 1; index += 1) {
+        const startPoint = ring[index];
+        const endPoint = ring[index + 1];
+        if (!isOnBisector(startPoint[0], startPoint[1]) || !isOnBisector(endPoint[0], endPoint[1])) {
+          continue;
+        }
+
+        const segmentKey = normalizeSegmentKey(startPoint, endPoint);
+        if (seen.has(segmentKey)) {
+          continue;
+        }
+
+        seen.add(segmentKey);
+        segments.push([startPoint, endPoint]);
+      }
+    }
+  }
+
+  return segments;
+}
+
 export function createThermometerStartIcon(color: string): L.DivIcon {
   return L.divIcon({
     className: 'thermometer-marker thermometer-marker--start',

@@ -17,9 +17,9 @@ import {
   createThermometerAreaPolygon,
   createThermometerEndIcon,
   createThermometerStartIcon,
-  getBisectorEdgePoints,
   getBisectorPoints,
   getBoundingBox,
+  extractBisectorSegments,
   getRadarQuestionBounds,
   toPolygonFeatureCollection,
 } from '../utils/geometry.util';
@@ -85,6 +85,16 @@ export class WorldMapRendererService {
     this.activeCountryLayer?.removeFrom(this.map);
     this.questionLayer?.removeFrom(this.map);
 
+    const rawBbox = activeCountryGeometry ? getBoundingBox(activeCountryGeometry) : null;
+    const expandedBbox = rawBbox
+      ? {
+          minLng: rawBbox.minLng - 2,
+          maxLng: rawBbox.maxLng + 2,
+          minLat: rawBbox.minLat - 2,
+          maxLat: rawBbox.maxLat + 2,
+        }
+      : null;
+
     if (!activeCountryGeometry) {
       if (worldFeatureCollection.features.length > 0) {
         this.allCountriesLayer = L.geoJSON(worldFeatureCollection, {
@@ -98,7 +108,7 @@ export class WorldMapRendererService {
         }).addTo(this.map);
       }
 
-      this.renderQuestionLayer(null, questions, onQuestionDragEnd);
+      this.renderQuestionLayer(null, questions, null, onQuestionDragEnd);
       if (shouldFitMap) {
         this.fitBounds(this.getQuestionsBounds(questions) ?? WORLD_MAP_DEFAULT_BOUNDS, undefined, headerHeight);
       }
@@ -128,9 +138,9 @@ export class WorldMapRendererService {
     } as L.GeoJSONOptions & L.PolylineOptions);
 
     this.activeCountryLayer = L.layerGroup([activeOutlineLayer]).addTo(this.map);
-    this.renderQuestionLayer(activeCountryGeometry, questions, onQuestionDragEnd);
+    this.renderQuestionLayer(activeCountryGeometry, questions, expandedBbox, onQuestionDragEnd);
 
-    const playableAreaBounds = this.getPlayableAreaBounds(activeCountryGeometry, questions);
+    const playableAreaBounds = this.getPlayableAreaBounds(activeCountryGeometry, questions, expandedBbox);
     if (shouldFitMap) {
       this.fitBounds(
         playableAreaBounds ?? activeOutlineLayer.getBounds(),
@@ -159,6 +169,7 @@ export class WorldMapRendererService {
   private renderQuestionLayer(
     activeCountryGeometry: FeatureCollection<Polygon | MultiPolygon> | null,
     questions: GameQuestion[],
+    thermometerBbox: { minLng: number; maxLng: number; minLat: number; maxLat: number } | null,
     onQuestionDragEnd?: (
       questionId: string,
       point: { lat: number; lng: number },
@@ -171,12 +182,8 @@ export class WorldMapRendererService {
 
     const layers: L.Layer[] = [];
 
-    const countryBbox = activeCountryGeometry
-      ? getBoundingBox(activeCountryGeometry)
-      : null;
-
     if (activeCountryGeometry) {
-      const playableArea = this.buildPlayableArea(activeCountryGeometry, questions);
+      const playableArea = this.buildPlayableArea(activeCountryGeometry, questions, thermometerBbox);
       if (playableArea && playableArea.features.length > 0) {
         const mask = subtractGeometry(activeCountryGeometry, playableArea);
         if (mask.features.length > 0) {
@@ -199,7 +206,13 @@ export class WorldMapRendererService {
       if (isRadarQuestion(question)) {
         this.renderRadarQuestion(layers, question, onQuestionDragEnd);
       } else if (isThermometerQuestion(question)) {
-        this.renderThermometerQuestion(layers, question, countryBbox, onQuestionDragEnd);
+        this.renderThermometerQuestion(
+          layers,
+          question,
+          thermometerBbox,
+          activeCountryGeometry,
+          onQuestionDragEnd,
+        );
       }
     }
 
@@ -251,6 +264,7 @@ export class WorldMapRendererService {
     layers: L.Layer[],
     question: import('../models/thermometer-question.model').ThermometerQuestion,
     countryBbox: { minLng: number; maxLng: number; minLat: number; maxLat: number } | null,
+    activeCountryGeometry: FeatureCollection<Polygon | MultiPolygon> | null,
     onQuestionDragEnd?: (
       questionId: string,
       point: { lat: number; lng: number },
@@ -268,20 +282,75 @@ export class WorldMapRendererService {
       interactive: false,
     });
 
-    // Perpendicular bisector: span the full country bbox so it is unmistakably centred
-    const bisector = countryBbox
-      ? getBisectorEdgePoints(question.start, question.end, countryBbox)
-      : getBisectorPoints(question.start, question.end, 90);
-    const bisectorLine = L.polyline(
-      [L.latLng(bisector.p1[1], bisector.p1[0]), L.latLng(bisector.p2[1], bisector.p2[0])],
-      {
-        color: question.color,
-        weight: 2,
-        opacity: 0.6,
-        dashArray: '6, 6',
-        interactive: false,
-      },
-    );
+    const createBisectorLayers = (
+      startPoint: { lat: number; lng: number },
+      endPoint: { lat: number; lng: number },
+    ): L.Polyline[] => {
+      if (!countryBbox || !activeCountryGeometry) {
+        const fallback = getBisectorPoints(startPoint, endPoint, 90);
+        return [
+          L.polyline(
+            [L.latLng(fallback.p1[1], fallback.p1[0]), L.latLng(fallback.p2[1], fallback.p2[0])],
+            {
+              color: question.color,
+              weight: 2,
+              opacity: 0.6,
+              dashArray: '6, 6',
+              interactive: false,
+            },
+          ),
+        ];
+      }
+
+      const thermometerArea = {
+        type: 'FeatureCollection' as const,
+        features: [
+          {
+            type: 'Feature' as const,
+            properties: {},
+            geometry: createThermometerAreaPolygon(
+              startPoint,
+              endPoint,
+              question.applied.mode,
+              countryBbox,
+            ),
+          },
+        ],
+      };
+
+      const clippedArea = intersectGeometry(toPolygonFeatureCollection(activeCountryGeometry), thermometerArea);
+      const segments = extractBisectorSegments(clippedArea, startPoint, endPoint);
+      if (segments.length === 0) {
+        const fallback = getBisectorPoints(startPoint, endPoint, 90);
+        return [
+          L.polyline(
+            [L.latLng(fallback.p1[1], fallback.p1[0]), L.latLng(fallback.p2[1], fallback.p2[0])],
+            {
+              color: question.color,
+              weight: 2,
+              opacity: 0.6,
+              dashArray: '6, 6',
+              interactive: false,
+            },
+          ),
+        ];
+      }
+
+      return segments.map((segment) =>
+        L.polyline(
+          [L.latLng(segment[0][1], segment[0][0]), L.latLng(segment[1][1], segment[1][0])],
+          {
+            color: question.color,
+            weight: 2,
+            opacity: 0.6,
+            dashArray: '6, 6',
+            interactive: false,
+          },
+        ),
+      );
+    };
+
+    const bisectorLines = createBisectorLayers(question.start, question.end);
 
     // Small dot at the midpoint so the centre is unambiguous
     const midLat = (question.start.lat + question.end.lat) / 2;
@@ -315,26 +384,12 @@ export class WorldMapRendererService {
         const nextMidLng = (s.lng + e.lng) / 2;
         midDot.setLatLng(L.latLng(nextMidLat, nextMidLng));
 
-        if (countryBbox) {
-          const nextBisector = getBisectorEdgePoints(
-            { lat: s.lat, lng: s.lng },
-            { lat: e.lat, lng: e.lng },
-            countryBbox,
-          );
-          bisectorLine.setLatLngs([
-            L.latLng(nextBisector.p1[1], nextBisector.p1[0]),
-            L.latLng(nextBisector.p2[1], nextBisector.p2[0]),
-          ]);
-        } else {
-          const nextBisector = getBisectorPoints(
-            { lat: s.lat, lng: s.lng },
-            { lat: e.lat, lng: e.lng },
-            90,
-          );
-          bisectorLine.setLatLngs([
-            L.latLng(nextBisector.p1[1], nextBisector.p1[0]),
-            L.latLng(nextBisector.p2[1], nextBisector.p2[0]),
-          ]);
+        const nextBisectorLines = createBisectorLayers(
+          { lat: s.lat, lng: s.lng },
+          { lat: e.lat, lng: e.lng },
+        );
+        for (let index = 0; index < Math.min(bisectorLines.length, nextBisectorLines.length); index += 1) {
+          bisectorLines[index].setLatLngs(nextBisectorLines[index].getLatLngs());
         }
       };
 
@@ -359,21 +414,19 @@ export class WorldMapRendererService {
       });
     }
 
-    layers.push(line, bisectorLine, midDot, startMarker, endMarker);
+    layers.push(line, ...bisectorLines, midDot, startMarker, endMarker);
   }
 
   private buildPlayableArea(
     activeCountryGeometry: FeatureCollection<Polygon | MultiPolygon>,
     questions: GameQuestion[],
+    thermometerBbox: { minLng: number; maxLng: number; minLat: number; maxLat: number } | null,
   ): FeatureCollection<Polygon> | null {
     if (questions.length === 0) {
       return null;
     }
 
     let playableArea = toPolygonFeatureCollection(activeCountryGeometry);
-
-    const hasThermometer = questions.some(isThermometerQuestion);
-    const bbox = hasThermometer ? getBoundingBox(activeCountryGeometry) : null;
 
     for (const question of questions) {
       if (isRadarQuestion(question)) {
@@ -391,7 +444,7 @@ export class WorldMapRendererService {
             ? intersectGeometry(playableArea, radarArea)
             : subtractGeometry(playableArea, radarArea);
       } else if (isThermometerQuestion(question)) {
-        if (!bbox) {
+        if (!thermometerBbox) {
           continue;
         }
 
@@ -402,12 +455,7 @@ export class WorldMapRendererService {
             question.start,
             question.end,
             question.applied.mode,
-            {
-              minLng: bbox.minLng - 2,
-              maxLng: bbox.maxLng + 2,
-              minLat: bbox.minLat - 2,
-              maxLat: bbox.maxLat + 2,
-            },
+            thermometerBbox,
           ),
         };
 
@@ -449,8 +497,9 @@ export class WorldMapRendererService {
   private getPlayableAreaBounds(
     activeCountryGeometry: FeatureCollection<Polygon | MultiPolygon>,
     questions: GameQuestion[],
+    thermometerBbox: { minLng: number; maxLng: number; minLat: number; maxLat: number } | null,
   ): L.LatLngBounds | null {
-    const playableArea = this.buildPlayableArea(activeCountryGeometry, questions);
+    const playableArea = this.buildPlayableArea(activeCountryGeometry, questions, thermometerBbox);
     if (!playableArea || playableArea.features.length === 0) {
       return null;
     }
