@@ -146,6 +146,149 @@ export function getBisectorPoints(
   };
 }
 
+type ProjectedPoint = { x: number; y: number };
+type ProjectedBbox = { minX: number; maxX: number; minY: number; maxY: number };
+const THERMOMETER_BISECTOR_SAMPLE_COUNT = 48;
+
+function projectPoint(point: { lat: number; lng: number }): ProjectedPoint {
+  const projected = L.CRS.EPSG3857.project(L.latLng(point.lat, point.lng));
+  return { x: projected.x, y: projected.y };
+}
+
+function unprojectPoint(point: ProjectedPoint): [number, number] {
+  const unprojected = L.CRS.EPSG3857.unproject(L.point(point.x, point.y));
+  return [normalizeLongitude(unprojected.lng), clamp(unprojected.lat, -90, 90)];
+}
+
+function projectBoundingBox(
+  bbox: { minLng: number; maxLng: number; minLat: number; maxLat: number },
+): ProjectedBbox {
+  const southWest = projectPoint({ lat: bbox.minLat, lng: bbox.minLng });
+  const northEast = projectPoint({ lat: bbox.maxLat, lng: bbox.maxLng });
+
+  return {
+    minX: Math.min(southWest.x, northEast.x),
+    maxX: Math.max(southWest.x, northEast.x),
+    minY: Math.min(southWest.y, northEast.y),
+    maxY: Math.max(southWest.y, northEast.y),
+  };
+}
+
+function getProjectedBisector(start: QuestionCenter, end: QuestionCenter): {
+  mid: ProjectedPoint;
+  ab: ProjectedPoint;
+  direction: ProjectedPoint;
+} {
+  const projectedStart = projectPoint(start);
+  const projectedEnd = projectPoint(end);
+  const abX = projectedEnd.x - projectedStart.x;
+  const abY = projectedEnd.y - projectedStart.y;
+  const abLength = Math.hypot(abX, abY);
+
+  if (abLength < 1e-9) {
+    return {
+      mid: projectedStart,
+      ab: { x: 1, y: 0 },
+      direction: { x: 0, y: 1 },
+    };
+  }
+
+  return {
+    mid: {
+      x: (projectedStart.x + projectedEnd.x) / 2,
+      y: (projectedStart.y + projectedEnd.y) / 2,
+    },
+    ab: { x: abX, y: abY },
+    direction: { x: -abY, y: abX },
+  };
+}
+
+function getProjectedBisectorEdgePoints(
+  start: QuestionCenter,
+  end: QuestionCenter,
+  projectedBbox: ProjectedBbox,
+): { p1: ProjectedPoint; p2: ProjectedPoint } {
+  const bisector = getProjectedBisector(start, end);
+  const ts: number[] = [];
+  const EPS = 1e-9;
+
+  if (Math.abs(bisector.direction.x) > EPS) {
+    ts.push((projectedBbox.minX - bisector.mid.x) / bisector.direction.x);
+    ts.push((projectedBbox.maxX - bisector.mid.x) / bisector.direction.x);
+  }
+  if (Math.abs(bisector.direction.y) > EPS) {
+    ts.push((projectedBbox.minY - bisector.mid.y) / bisector.direction.y);
+    ts.push((projectedBbox.maxY - bisector.mid.y) / bisector.direction.y);
+  }
+
+  const points = ts
+    .map((t) => ({
+      x: bisector.mid.x + t * bisector.direction.x,
+      y: bisector.mid.y + t * bisector.direction.y,
+      t,
+    }))
+    .filter(
+      (point) =>
+        point.x >= projectedBbox.minX - EPS &&
+        point.x <= projectedBbox.maxX + EPS &&
+        point.y >= projectedBbox.minY - EPS &&
+        point.y <= projectedBbox.maxY + EPS,
+    )
+    .sort((a, b) => a.t - b.t);
+
+  if (points.length < 2) {
+    const directionLength = Math.hypot(bisector.direction.x, bisector.direction.y) || 1;
+    const extent = Math.max(
+      projectedBbox.maxX - projectedBbox.minX,
+      projectedBbox.maxY - projectedBbox.minY,
+      1,
+    );
+
+    return {
+      p1: {
+        x: bisector.mid.x - (extent * bisector.direction.x) / directionLength,
+        y: bisector.mid.y - (extent * bisector.direction.y) / directionLength,
+      },
+      p2: {
+        x: bisector.mid.x + (extent * bisector.direction.x) / directionLength,
+        y: bisector.mid.y + (extent * bisector.direction.y) / directionLength,
+      },
+    };
+  }
+
+  return {
+    p1: { x: points[0].x, y: points[0].y },
+    p2: { x: points[points.length - 1].x, y: points[points.length - 1].y },
+  };
+}
+
+function sampleProjectedSegment(
+  start: ProjectedPoint,
+  end: ProjectedPoint,
+  sampleCount: number,
+): ProjectedPoint[] {
+  const points: ProjectedPoint[] = [];
+
+  for (let index = 0; index <= sampleCount; index += 1) {
+    const t = index / sampleCount;
+    points.push({
+      x: start.x + (end.x - start.x) * t,
+      y: start.y + (end.y - start.y) * t,
+    });
+  }
+
+  return points;
+}
+
+function pushPositionIfDistinct(target: Position[], next: Position): void {
+  const previous = target[target.length - 1];
+  if (previous && Math.abs(previous[0] - next[0]) < 1e-9 && Math.abs(previous[1] - next[1]) < 1e-9) {
+    return;
+  }
+
+  target.push(next);
+}
+
 /**
  * Returns the two points where the perpendicular bisector of [start, end]
  * intersects the given bounding-box edges. This gives an edge-to-edge line
@@ -157,54 +300,23 @@ export function getBisectorEdgePoints(
   end: QuestionCenter,
   bbox: { minLng: number; maxLng: number; minLat: number; maxLat: number },
 ): { p1: [number, number]; p2: [number, number] } {
-  const midLng = (start.lng + end.lng) / 2;
-  const midLat = (start.lat + end.lat) / 2;
-
-  const dx = end.lng - start.lng;
-  const dy = end.lat - start.lat;
-  const len = Math.sqrt(dx * dx + dy * dy) || 1;
-
-  // Bisector direction vector (perpendicular to AB)
-  const dirLng = -dy / len;
-  const dirLat = dx / len;
-
-  const ts: number[] = [];
-  const EPS = 1e-12;
-
-  if (Math.abs(dirLng) > EPS) {
-    ts.push((bbox.minLng - midLng) / dirLng);
-    ts.push((bbox.maxLng - midLng) / dirLng);
-  }
-  if (Math.abs(dirLat) > EPS) {
-    ts.push((bbox.minLat - midLat) / dirLat);
-    ts.push((bbox.maxLat - midLat) / dirLat);
-  }
-
-  const points = ts
-    .map((t) => ({
-      lng: midLng + t * dirLng,
-      lat: midLat + t * dirLat,
-      t,
-    }))
-    .filter(
-      (p) =>
-        p.lng >= bbox.minLng - EPS &&
-        p.lng <= bbox.maxLng + EPS &&
-        p.lat >= bbox.minLat - EPS &&
-        p.lat <= bbox.maxLat + EPS,
-    )
-    .sort((a, b) => a.t - b.t);
-
-  if (points.length < 2) {
-    // Fallback: the bisector is parallel to an edge and completely inside;
-    // use a long fixed extent instead.
-    return getBisectorPoints(start, end, 90);
-  }
+  const intersections = getProjectedBisectorEdgePoints(start, end, projectBoundingBox(bbox));
 
   return {
-    p1: [points[0].lng, points[0].lat],
-    p2: [points[points.length - 1].lng, points[points.length - 1].lat],
+    p1: unprojectPoint(intersections.p1),
+    p2: unprojectPoint(intersections.p2),
   };
+}
+
+export function getBisectorPath(
+  start: QuestionCenter,
+  end: QuestionCenter,
+  bbox: { minLng: number; maxLng: number; minLat: number; maxLat: number },
+): Position[] {
+  const intersections = getProjectedBisectorEdgePoints(start, end, projectBoundingBox(bbox));
+  return sampleProjectedSegment(intersections.p1, intersections.p2, THERMOMETER_BISECTOR_SAMPLE_COUNT).map(
+    (point) => unprojectPoint(point),
+  );
 }
 
 /**
@@ -227,115 +339,60 @@ export function createThermometerAreaPolygon(
   mode: ThermometerMode,
   bbox: { minLng: number; maxLng: number; minLat: number; maxLat: number },
 ): Polygon {
-  const midLng = (start.lng + end.lng) / 2;
-  const midLat = (start.lat + end.lat) / 2;
-
-  const dx = end.lng - start.lng;
-  const dy = end.lat - start.lat;
-  const len = Math.sqrt(dx * dx + dy * dy) || 1;
-  const ex = dx / len;
-  const ey = dy / len;
-
-  // For 'warmer': playable side contains end   marker  →  ex*(lng-midLng) + ey*(lat-midLat)  > 0
-  // For 'colder': playable side contains start marker  →  ex*(lng-midLng) + ey*(lat-midLat)  < 0
   const side = mode === 'warmer' ? 1 : -1;
   const EPS = 1e-10;
+  const bisector = getProjectedBisector(start, end);
+  const sideValue = (lng: number, lat: number): number => {
+    const point = projectPoint({ lat, lng });
+    return bisector.ab.x * (point.x - bisector.mid.x) + bisector.ab.y * (point.y - bisector.mid.y);
+  };
 
-  const corners: [number, number][] = [
-    [bbox.minLng, bbox.minLat], // 0: bottom-left
-    [bbox.maxLng, bbox.minLat], // 1: bottom-right
-    [bbox.maxLng, bbox.maxLat], // 2: top-right
-    [bbox.minLng, bbox.maxLat], // 3: top-left
+  const isPlayable = (lng: number, lat: number): boolean => sideValue(lng, lat) * side >= -EPS;
+  const bisectorPath = getBisectorPath(start, end, bbox);
+  const corners: Position[] = [
+    [bbox.minLng, bbox.minLat],
+    [bbox.maxLng, bbox.minLat],
+    [bbox.maxLng, bbox.maxLat],
+    [bbox.minLng, bbox.maxLat],
   ];
-
-  const values = corners.map(
-    ([lng, lat]) => ex * (lng - midLng) + ey * (lat - midLat),
+  const playableCornerIndices = corners.flatMap((corner, index) =>
+    isPlayable(corner[0], corner[1]) ? [index] : [],
   );
 
-  const isPlayable = (v: number) => v * side >= -EPS;
+  if (playableCornerIndices.length === 0) {
+    return { type: 'Polygon', coordinates: [[]] };
+  }
 
-  const ring: [number, number][] = [];
+  if (playableCornerIndices.length === 4) {
+    return {
+      type: 'Polygon',
+      coordinates: [[...corners, corners[0]]],
+    };
+  }
 
-  for (let i = 0; i < 4; i++) {
-    const j = (i + 1) % 4;
-    const vi = values[i];
-    const vj = values[j];
-    const ci = corners[i];
-    const cj = corners[j];
-    const playI = isPlayable(vi);
-    const playJ = isPlayable(vj);
-
-    if (playI) {
-      ring.push([ci[0], ci[1]]);
-    }
-
-    // Edge crosses the bisector when the signs differ.
-    if (playI !== playJ && Math.abs(vj - vi) > EPS) {
-      const t = -vi / (vj - vi); // parameter along edge where value == 0
-      const ix = ci[0] + t * (cj[0] - ci[0]);
-      const iy = ci[1] + t * (cj[1] - ci[1]);
-      ring.push([ix, iy]);
+  const ring: Position[] = [];
+  const firstIndex = playableCornerIndices[0];
+  for (let offset = 0; offset < playableCornerIndices.length; offset += 1) {
+    const index = (firstIndex + offset) % 4;
+    const corner = corners[index];
+    if (isPlayable(corner[0], corner[1])) {
+      pushPositionIfDistinct(ring, corner);
     }
   }
 
+  const path = side > 0 ? [...bisectorPath].reverse() : bisectorPath;
+  for (const point of path) {
+    pushPositionIfDistinct(ring, point);
+  }
+
   if (ring.length > 0) {
-    ring.push([ring[0][0], ring[0][1]]);
+    pushPositionIfDistinct(ring, ring[0]);
   }
 
   return {
     type: 'Polygon',
-    coordinates: [ring as Position[]],
+    coordinates: [ring],
   };
-}
-
-export function extractBisectorSegments(
-  geometry: FeatureCollection<Polygon>,
-  start: QuestionCenter,
-  end: QuestionCenter,
-): Position[][] {
-  const midLng = (start.lng + end.lng) / 2;
-  const midLat = (start.lat + end.lat) / 2;
-  const dx = end.lng - start.lng;
-  const dy = end.lat - start.lat;
-  const len = Math.sqrt(dx * dx + dy * dy) || 1;
-  const ex = dx / len;
-  const ey = dy / len;
-  const lineEpsilon = 1e-6;
-  const seen = new Set<string>();
-  const segments: Position[][] = [];
-
-  const isOnBisector = (lng: number, lat: number): boolean => {
-    const value = ex * (lng - midLng) + ey * (lat - midLat);
-    return Math.abs(value) < lineEpsilon;
-  };
-
-  const normalizeSegmentKey = (a: Position, b: Position): string => {
-    const first = `${a[0].toFixed(6)},${a[1].toFixed(6)}`;
-    const second = `${b[0].toFixed(6)},${b[1].toFixed(6)}`;
-    return first < second ? `${first}|${second}` : `${second}|${first}`;
-  };
-
-  for (const feature of geometry.features) {
-    for (const ring of feature.geometry.coordinates) {
-      for (let index = 0; index < ring.length - 1; index += 1) {
-        const startPoint = ring[index];
-        const endPoint = ring[index + 1];
-        if (!isOnBisector(startPoint[0], startPoint[1]) || !isOnBisector(endPoint[0], endPoint[1])) {
-          continue;
-        }
-
-        const segmentKey = normalizeSegmentKey(startPoint, endPoint);
-        if (seen.has(segmentKey)) {
-          continue;
-        }
-
-        seen.add(segmentKey);
-        segments.push([startPoint, endPoint]);
-      }
-    }
-  }
-
-  return segments;
 }
 
 export function createThermometerStartIcon(color: string): L.DivIcon {

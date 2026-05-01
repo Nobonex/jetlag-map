@@ -1,13 +1,80 @@
 import { describe, expect, it } from 'vitest';
+import * as L from 'leaflet';
 
 import {
   createThermometerAreaPolygon,
-  extractBisectorSegments,
+  getBisectorPath,
   getBisectorEdgePoints,
   getBisectorPoints,
   getBoundingBox,
   normalizeLongitude,
 } from './geometry.util';
+
+function toProjectedPoint(lng: number, lat: number): { x: number; y: number } {
+  const projected = L.CRS.EPSG3857.project(L.latLng(lat, lng));
+  return { x: projected.x, y: projected.y };
+}
+
+function getProjectedMidpoint(
+  start: { lat: number; lng: number },
+  end: { lat: number; lng: number },
+): { lat: number; lng: number } {
+  const projectedStart = toProjectedPoint(start.lng, start.lat);
+  const projectedEnd = toProjectedPoint(end.lng, end.lat);
+  const midpoint = L.CRS.EPSG3857.unproject(
+    L.point(
+      (projectedStart.x + projectedEnd.x) / 2,
+      (projectedStart.y + projectedEnd.y) / 2,
+    ),
+  );
+
+  return { lat: midpoint.lat, lng: midpoint.lng };
+}
+
+function createProjectedLocalBbox(
+  start: { lat: number; lng: number },
+  end: { lat: number; lng: number },
+): { minLng: number; maxLng: number; minLat: number; maxLat: number } {
+  const projectedStart = L.CRS.EPSG3857.project(L.latLng(start.lat, start.lng));
+  const projectedEnd = L.CRS.EPSG3857.project(L.latLng(end.lat, end.lng));
+  const projectedMid = L.point(
+    (projectedStart.x + projectedEnd.x) / 2,
+    (projectedStart.y + projectedEnd.y) / 2,
+  );
+  const localExtentMeters = Math.max(projectedStart.distanceTo(projectedEnd) * 0.75, 30000);
+  const southWest = L.CRS.EPSG3857.unproject(
+    L.point(projectedMid.x - localExtentMeters, projectedMid.y - localExtentMeters),
+  );
+  const northEast = L.CRS.EPSG3857.unproject(
+    L.point(projectedMid.x + localExtentMeters, projectedMid.y + localExtentMeters),
+  );
+
+  return {
+    minLng: southWest.lng,
+    maxLng: northEast.lng,
+    minLat: southWest.lat,
+    maxLat: northEast.lat,
+  };
+}
+
+function projectedBisectorDot(
+  start: { lat: number; lng: number },
+  end: { lat: number; lng: number },
+  point: { lat: number; lng: number },
+): number {
+  const projectedStart = toProjectedPoint(start.lng, start.lat);
+  const projectedEnd = toProjectedPoint(end.lng, end.lat);
+  const projectedPoint = toProjectedPoint(point.lng, point.lat);
+  const midpoint = {
+    x: (projectedStart.x + projectedEnd.x) / 2,
+    y: (projectedStart.y + projectedEnd.y) / 2,
+  };
+
+  return (
+    (projectedEnd.x - projectedStart.x) * (projectedPoint.x - midpoint.x) +
+    (projectedEnd.y - projectedStart.y) * (projectedPoint.y - midpoint.y)
+  );
+}
 
 describe('getBoundingBox', () => {
   it('computes bounds for a single Polygon feature', () => {
@@ -225,10 +292,10 @@ describe('createThermometerAreaPolygon', () => {
     const lngs = ring.map((p) => p[0]);
     const lats = ring.map((p) => p[1]);
 
-    expect(Math.min(...lngs)).toBe(testBbox.minLng);
-    expect(Math.max(...lngs)).toBe(testBbox.maxLng);
-    expect(Math.min(...lats)).toBe(testBbox.minLat);
-    expect(Math.max(...lats)).toBe(testBbox.maxLat);
+    expect(Math.min(...lngs)).toBeCloseTo(testBbox.minLng, 10);
+    expect(Math.max(...lngs)).toBeCloseTo(testBbox.maxLng, 10);
+    expect(Math.min(...lats)).toBeCloseTo(testBbox.minLat, 10);
+    expect(Math.max(...lats)).toBeCloseTo(testBbox.maxLat, 10);
   });
 
   it('returns an empty ring when the playable side is outside the bbox', () => {
@@ -260,6 +327,22 @@ describe('createThermometerAreaPolygon', () => {
 
     expect(signedArea(warmer.coordinates[0])).toBeGreaterThan(0);
     expect(signedArea(colder.coordinates[0])).toBeGreaterThan(0);
+  });
+
+  it('uses the exact bisector path as part of the polygon boundary', () => {
+    const start = { lat: 48.8566, lng: 2.3522 };
+    const end = { lat: 45.764, lng: 4.8357 };
+    const bbox = { minLng: -2, maxLng: 8, minLat: 42, maxLat: 52 };
+    const polygon = createThermometerAreaPolygon(start, end, 'warmer', bbox);
+    const path = getBisectorPath(start, end, bbox);
+    const ring = polygon.coordinates[0];
+
+    for (const [lng, lat] of path) {
+      const matches = ring.some(
+        ([ringLng, ringLat]) => Math.abs(ringLng - lng) < 1e-9 && Math.abs(ringLat - lat) < 1e-9,
+      );
+      expect(matches).toBe(true);
+    }
   });
 });
 
@@ -299,11 +382,11 @@ describe('getBisectorEdgePoints', () => {
     );
 
     // Bisector should hit the top and bottom edges
-    expect(p1[0]).toBe(p2[0]);
-    expect(p1[0]).toBe(5);
+    expect(p1[0]).toBeCloseTo(p2[0], 10);
+    expect(p1[0]).toBeCloseTo(5, 10);
     const lats = [p1[1], p2[1]].sort((a, b) => a - b);
-    expect(lats[0]).toBe(testBbox.minLat);
-    expect(lats[1]).toBe(testBbox.maxLat);
+    expect(lats[0]).toBeCloseTo(testBbox.minLat, 10);
+    expect(lats[1]).toBeCloseTo(testBbox.maxLat, 10);
   });
 
   it('returns points on opposite bbox edges for a vertical thermometer', () => {
@@ -314,77 +397,16 @@ describe('getBisectorEdgePoints', () => {
       testBbox,
     );
 
-    expect(p1[1]).toBe(p2[1]);
-    expect(p1[1]).toBe(5);
-    const lngs = [p1[0], p2[0]].sort((a, b) => a - b);
-    expect(lngs[0]).toBe(testBbox.minLng);
-    expect(lngs[1]).toBe(testBbox.maxLng);
-  });
-
-  it('passes through the midpoint for diagonal thermometers', () => {
-    const { p1, p2 } = getBisectorEdgePoints(
-      { lat: 10, lng: 0 },
-      { lat: 0, lng: 10 },
-      testBbox,
-    );
-
-    const midLng = 5;
-    const midLat = 5;
-
-    // The midpoint should lie on the segment p1->p2 (within tolerance)
-    const t = (midLng - p1[0]) / (p2[0] - p1[0]);
-    const latOnLine = p1[1] + t * (p2[1] - p1[1]);
-    expect(Math.abs(latOnLine - midLat)).toBeLessThan(1e-10);
-  });
-
-  it('keeps returned points inside the bbox', () => {
-    const { p1, p2 } = getBisectorEdgePoints(
-      { lat: 5, lng: 5 },
-      { lat: 7, lng: 8 },
-      testBbox,
-    );
-
-    for (const [lng, lat] of [p1, p2]) {
-      expect(lng).toBeGreaterThanOrEqual(testBbox.minLng);
-      expect(lng).toBeLessThanOrEqual(testBbox.maxLng);
-      expect(lat).toBeGreaterThanOrEqual(testBbox.minLat);
-      expect(lat).toBeLessThanOrEqual(testBbox.maxLat);
-    }
-  });
-});
-
-describe('getBisectorEdgePoints', () => {
-  const testBbox = { minLng: -10, maxLng: 20, minLat: -10, maxLat: 20 };
-
-  it('returns points on opposite bbox edges for a horizontal thermometer', () => {
-    // Horizontal: bisector is vertical at lng = 5
-    const { p1, p2 } = getBisectorEdgePoints(
-      { lat: 0, lng: 0 },
-      { lat: 0, lng: 10 },
-      testBbox,
-    );
-
-    // Bisector should hit the top and bottom edges
-    expect(p1[0]).toBe(p2[0]);
-    expect(p1[0]).toBe(5);
-    const lats = [p1[1], p2[1]].sort((a, b) => a - b);
-    expect(lats[0]).toBe(testBbox.minLat);
-    expect(lats[1]).toBe(testBbox.maxLat);
-  });
-
-  it('returns points on opposite bbox edges for a vertical thermometer', () => {
-    // Vertical: bisector is horizontal at lat = 5
-    const { p1, p2 } = getBisectorEdgePoints(
+    const projectedMidpoint = getProjectedMidpoint(
       { lat: 0, lng: 5 },
       { lat: 10, lng: 5 },
-      testBbox,
     );
 
-    expect(p1[1]).toBe(p2[1]);
-    expect(p1[1]).toBe(5);
+    expect(p1[1]).toBeCloseTo(p2[1], 10);
+    expect(p1[1]).toBeCloseTo(projectedMidpoint.lat, 10);
     const lngs = [p1[0], p2[0]].sort((a, b) => a - b);
-    expect(lngs[0]).toBe(testBbox.minLng);
-    expect(lngs[1]).toBe(testBbox.maxLng);
+    expect(lngs[0]).toBeCloseTo(testBbox.minLng, 10);
+    expect(lngs[1]).toBeCloseTo(testBbox.maxLng, 10);
   });
 
   it('passes through the midpoint for diagonal thermometers', () => {
@@ -394,13 +416,26 @@ describe('getBisectorEdgePoints', () => {
       testBbox,
     );
 
-    const midLng = 5;
-    const midLat = 5;
+    expect(Math.abs(projectedBisectorDot(
+      { lat: 10, lng: 0 },
+      { lat: 0, lng: 10 },
+      { lat: p1[1], lng: p1[0] },
+    ))).toBeLessThan(1e-2);
+    expect(Math.abs(projectedBisectorDot(
+      { lat: 10, lng: 0 },
+      { lat: 0, lng: 10 },
+      { lat: p2[1], lng: p2[0] },
+    ))).toBeLessThan(1e-2);
 
-    // The midpoint should lie on the segment p1->p2 (within tolerance)
-    const t = (midLng - p1[0]) / (p2[0] - p1[0]);
-    const latOnLine = p1[1] + t * (p2[1] - p1[1]);
-    expect(Math.abs(latOnLine - midLat)).toBeLessThan(1e-10);
+    const projectedMidpoint = getProjectedMidpoint(
+      { lat: 10, lng: 0 },
+      { lat: 0, lng: 10 },
+    );
+    expect(Math.abs(projectedBisectorDot(
+      { lat: 10, lng: 0 },
+      { lat: 0, lng: 10 },
+      projectedMidpoint,
+    ))).toBeLessThan(1e-2);
   });
 
   it('keeps returned points inside the bbox', () => {
@@ -411,10 +446,10 @@ describe('getBisectorEdgePoints', () => {
     );
 
     for (const [lng, lat] of [p1, p2]) {
-      expect(lng).toBeGreaterThanOrEqual(testBbox.minLng);
-      expect(lng).toBeLessThanOrEqual(testBbox.maxLng);
-      expect(lat).toBeGreaterThanOrEqual(testBbox.minLat);
-      expect(lat).toBeLessThanOrEqual(testBbox.maxLat);
+      expect(lng).toBeGreaterThanOrEqual(testBbox.minLng - 1e-9);
+      expect(lng).toBeLessThanOrEqual(testBbox.maxLng + 1e-9);
+      expect(lat).toBeGreaterThanOrEqual(testBbox.minLat - 1e-9);
+      expect(lat).toBeLessThanOrEqual(testBbox.maxLat + 1e-9);
     }
   });
 
@@ -428,18 +463,8 @@ describe('getBisectorEdgePoints', () => {
 
     // The bisector line should pass through two vertices of the polygon ring
     // (the two interpolated edge-crossing points)
-    const midLng = (start.lng + end.lng) / 2;
-    const midLat = (start.lat + end.lat) / 2;
-    const dx = end.lng - start.lng;
-    const dy = end.lat - start.lat;
-    const len = Math.sqrt(dx * dx + dy * dy);
-    const ex = dx / len;
-    const ey = dy / len;
-
-    const onBisector = (lng: number, lat: number): boolean => {
-      const value = ex * (lng - midLng) + ey * (lat - midLat);
-      return Math.abs(value) < 1e-6;
-    };
+    const onBisector = (lng: number, lat: number): boolean =>
+      Math.abs(projectedBisectorDot(start, end, { lat, lng })) < 1e-2;
 
     const bisectorVertices = ring.filter(([lng, lat]) => onBisector(lng, lat));
     expect(bisectorVertices.length).toBeGreaterThanOrEqual(2);
@@ -454,65 +479,37 @@ describe('getBisectorEdgePoints', () => {
     expect(matchesP1).toBe(true);
     expect(matchesP2).toBe(true);
   });
-});
 
-describe('extractBisectorSegments', () => {
-  const testBbox = { minLng: -10, maxLng: 20, minLat: -10, maxLat: 20 };
+  it('stays centred and perpendicular for close diagonal points', () => {
+    const start = { lat: 51.9225, lng: 4.47917 };
+    const end = { lat: 51.935, lng: 4.455 };
+    const bbox = createProjectedLocalBbox(start, end);
+    const { p1, p2 } = getBisectorEdgePoints(start, end, bbox);
 
-  it('extracts the vertical bisector segment from a horizontal thermometer area', () => {
-    const geometry = {
-      type: 'FeatureCollection' as const,
-      features: [
-        {
-          type: 'Feature' as const,
-          properties: {},
-          geometry: createThermometerAreaPolygon(
-            { lat: 0, lng: 0 },
-            { lat: 0, lng: 10 },
-            'warmer',
-            testBbox,
-          ),
-        },
-      ],
+    const projectedStart = toProjectedPoint(start.lng, start.lat);
+    const projectedEnd = toProjectedPoint(end.lng, end.lat);
+    const projectedP1 = toProjectedPoint(p1[0], p1[1]);
+    const projectedP2 = toProjectedPoint(p2[0], p2[1]);
+    const midpoint = {
+      x: (projectedStart.x + projectedEnd.x) / 2,
+      y: (projectedStart.y + projectedEnd.y) / 2,
+    };
+    const bisectorMid = {
+      x: (projectedP1.x + projectedP2.x) / 2,
+      y: (projectedP1.y + projectedP2.y) / 2,
+    };
+    const ab = {
+      x: projectedEnd.x - projectedStart.x,
+      y: projectedEnd.y - projectedStart.y,
+    };
+    const bisector = {
+      x: projectedP2.x - projectedP1.x,
+      y: projectedP2.y - projectedP1.y,
     };
 
-    const segments = extractBisectorSegments(geometry, { lat: 0, lng: 0 }, { lat: 0, lng: 10 });
-
-    expect(segments.length).toBe(1);
-    expect(segments[0][0][0]).toBeCloseTo(5, 6);
-    expect(segments[0][1][0]).toBeCloseTo(5, 6);
-  });
-
-  it('extracts at least one bisector segment for a diagonal thermometer area', () => {
-    const start = { lat: 10, lng: 0 };
-    const end = { lat: 0, lng: 10 };
-    const geometry = {
-      type: 'FeatureCollection' as const,
-      features: [
-        {
-          type: 'Feature' as const,
-          properties: {},
-          geometry: createThermometerAreaPolygon(start, end, 'warmer', testBbox),
-        },
-      ],
-    };
-
-    const segments = extractBisectorSegments(geometry, start, end);
-
-    expect(segments.length).toBeGreaterThanOrEqual(1);
-    for (const segment of segments) {
-      for (const [lng, lat] of segment) {
-        const midLng = (start.lng + end.lng) / 2;
-        const midLat = (start.lat + end.lat) / 2;
-        const dx = end.lng - start.lng;
-        const dy = end.lat - start.lat;
-        const len = Math.sqrt(dx * dx + dy * dy);
-        const ex = dx / len;
-        const ey = dy / len;
-        const value = ex * (lng - midLng) + ey * (lat - midLat);
-        expect(Math.abs(value)).toBeLessThan(1e-5);
-      }
-    }
+    expect(Math.abs(midpoint.x - bisectorMid.x)).toBeLessThan(1);
+    expect(Math.abs(midpoint.y - bisectorMid.y)).toBeLessThan(1);
+    expect(Math.abs(ab.x * bisector.x + ab.y * bisector.y)).toBeLessThan(1e-2);
   });
 });
 

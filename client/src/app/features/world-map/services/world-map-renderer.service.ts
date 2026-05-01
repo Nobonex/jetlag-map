@@ -17,9 +17,8 @@ import {
   createThermometerAreaPolygon,
   createThermometerEndIcon,
   createThermometerStartIcon,
-  getBisectorPoints,
+  getBisectorPath,
   getBoundingBox,
-  extractBisectorSegments,
   getRadarQuestionBounds,
   toPolygonFeatureCollection,
 } from '../utils/geometry.util';
@@ -206,13 +205,7 @@ export class WorldMapRendererService {
       if (isRadarQuestion(question)) {
         this.renderRadarQuestion(layers, question, onQuestionDragEnd);
       } else if (isThermometerQuestion(question)) {
-        this.renderThermometerQuestion(
-          layers,
-          question,
-          thermometerBbox,
-          activeCountryGeometry,
-          onQuestionDragEnd,
-        );
+        this.renderThermometerQuestion(layers, question, thermometerBbox, onQuestionDragEnd);
       }
     }
 
@@ -263,8 +256,7 @@ export class WorldMapRendererService {
   private renderThermometerQuestion(
     layers: L.Layer[],
     question: import('../models/thermometer-question.model').ThermometerQuestion,
-    countryBbox: { minLng: number; maxLng: number; minLat: number; maxLat: number } | null,
-    activeCountryGeometry: FeatureCollection<Polygon | MultiPolygon> | null,
+    thermometerBbox: { minLng: number; maxLng: number; minLat: number; maxLat: number } | null,
     onQuestionDragEnd?: (
       questionId: string,
       point: { lat: number; lng: number },
@@ -282,75 +274,43 @@ export class WorldMapRendererService {
       interactive: false,
     });
 
-    const createBisectorLayers = (
+    const createBisectorLatLngs = (
       startPoint: { lat: number; lng: number },
       endPoint: { lat: number; lng: number },
-    ): L.Polyline[] => {
-      if (!countryBbox || !activeCountryGeometry) {
-        const fallback = getBisectorPoints(startPoint, endPoint, 90);
-        return [
-          L.polyline(
-            [L.latLng(fallback.p1[1], fallback.p1[0]), L.latLng(fallback.p2[1], fallback.p2[0])],
-            {
-              color: question.color,
-              weight: 2,
-              opacity: 0.6,
-              dashArray: '6, 6',
-              interactive: false,
-            },
-          ),
-        ];
-      }
+    ): L.LatLng[] => {
+      const bbox = thermometerBbox ?? (() => {
+        const projectedStart = L.CRS.EPSG3857.project(L.latLng(startPoint.lat, startPoint.lng));
+        const projectedEnd = L.CRS.EPSG3857.project(L.latLng(endPoint.lat, endPoint.lng));
+        const projectedMid = L.point(
+          (projectedStart.x + projectedEnd.x) / 2,
+          (projectedStart.y + projectedEnd.y) / 2,
+        );
+        const localExtentMeters = Math.max(projectedStart.distanceTo(projectedEnd) * 0.75, 30000);
+        const southWest = L.CRS.EPSG3857.unproject(
+          L.point(projectedMid.x - localExtentMeters, projectedMid.y - localExtentMeters),
+        );
+        const northEast = L.CRS.EPSG3857.unproject(
+          L.point(projectedMid.x + localExtentMeters, projectedMid.y + localExtentMeters),
+        );
 
-      const thermometerArea = {
-        type: 'FeatureCollection' as const,
-        features: [
-          {
-            type: 'Feature' as const,
-            properties: {},
-            geometry: createThermometerAreaPolygon(
-              startPoint,
-              endPoint,
-              question.applied.mode,
-              countryBbox,
-            ),
-          },
-        ],
-      };
+        return {
+          minLng: southWest.lng,
+          maxLng: northEast.lng,
+          minLat: southWest.lat,
+          maxLat: northEast.lat,
+        };
+      })();
 
-      const clippedArea = intersectGeometry(toPolygonFeatureCollection(activeCountryGeometry), thermometerArea);
-      const segments = extractBisectorSegments(clippedArea, startPoint, endPoint);
-      if (segments.length === 0) {
-        const fallback = getBisectorPoints(startPoint, endPoint, 90);
-        return [
-          L.polyline(
-            [L.latLng(fallback.p1[1], fallback.p1[0]), L.latLng(fallback.p2[1], fallback.p2[0])],
-            {
-              color: question.color,
-              weight: 2,
-              opacity: 0.6,
-              dashArray: '6, 6',
-              interactive: false,
-            },
-          ),
-        ];
-      }
-
-      return segments.map((segment) =>
-        L.polyline(
-          [L.latLng(segment[0][1], segment[0][0]), L.latLng(segment[1][1], segment[1][0])],
-          {
-            color: question.color,
-            weight: 2,
-            opacity: 0.6,
-            dashArray: '6, 6',
-            interactive: false,
-          },
-        ),
-      );
+      return getBisectorPath(startPoint, endPoint, bbox).map(([lng, lat]) => L.latLng(lat, lng));
     };
 
-    const bisectorLines = createBisectorLayers(question.start, question.end);
+    const bisectorLine = L.polyline(createBisectorLatLngs(question.start, question.end), {
+      color: question.color,
+      weight: 2,
+      opacity: 0.6,
+      dashArray: '6, 6',
+      interactive: false,
+    });
 
     // Small dot at the midpoint so the centre is unambiguous
     const midLat = (question.start.lat + question.end.lat) / 2;
@@ -384,13 +344,10 @@ export class WorldMapRendererService {
         const nextMidLng = (s.lng + e.lng) / 2;
         midDot.setLatLng(L.latLng(nextMidLat, nextMidLng));
 
-        const nextBisectorLines = createBisectorLayers(
+        bisectorLine.setLatLngs(createBisectorLatLngs(
           { lat: s.lat, lng: s.lng },
           { lat: e.lat, lng: e.lng },
-        );
-        for (let index = 0; index < Math.min(bisectorLines.length, nextBisectorLines.length); index += 1) {
-          bisectorLines[index].setLatLngs(nextBisectorLines[index].getLatLngs());
-        }
+        ));
       };
 
       startMarker.on('drag', () => {
@@ -414,7 +371,7 @@ export class WorldMapRendererService {
       });
     }
 
-    layers.push(line, ...bisectorLines, midDot, startMarker, endMarker);
+    layers.push(line, bisectorLine, midDot, startMarker, endMarker);
   }
 
   private buildPlayableArea(
