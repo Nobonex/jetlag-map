@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import * as L from 'leaflet';
+import { intersectGeometry } from './map-mask.util';
 
 import {
   createThermometerAreaPolygon,
@@ -343,6 +344,40 @@ describe('createThermometerAreaPolygon', () => {
       );
       expect(matches).toBe(true);
     }
+  });
+
+  it('does not produce multiple gray areas when B is top-left of A', () => {
+    const start = { lat: 51.91, lng: 4.52 };
+    const end = { lat: 52.01, lng: 4.38 };
+    const bbox = { minLng: 4.2, maxLng: 4.7, minLat: 51.8, maxLat: 52.1 };
+    const polygon = createThermometerAreaPolygon(start, end, 'warmer', bbox);
+    const country = {
+      type: 'FeatureCollection' as const,
+      features: [
+        {
+          type: 'Feature' as const,
+          properties: {},
+          geometry: {
+            type: 'Polygon' as const,
+            coordinates: [[
+              [bbox.minLng, bbox.minLat],
+              [bbox.maxLng, bbox.minLat],
+              [bbox.maxLng, bbox.maxLat],
+              [bbox.minLng, bbox.maxLat],
+              [bbox.minLng, bbox.minLat],
+            ]],
+          },
+        },
+      ],
+    };
+
+    const clipped = intersectGeometry(country, {
+      type: 'Feature',
+      properties: {},
+      geometry: polygon,
+    });
+
+    expect(clipped.features).toHaveLength(1);
   });
 });
 

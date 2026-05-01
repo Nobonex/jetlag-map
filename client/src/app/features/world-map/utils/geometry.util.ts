@@ -149,6 +149,7 @@ export function getBisectorPoints(
 type ProjectedPoint = { x: number; y: number };
 type ProjectedBbox = { minX: number; maxX: number; minY: number; maxY: number };
 const THERMOMETER_BISECTOR_SAMPLE_COUNT = 48;
+type PerimeterDirection = 'ccw' | 'cw';
 
 function projectPoint(point: { lat: number; lng: number }): ProjectedPoint {
   const projected = L.CRS.EPSG3857.project(L.latLng(point.lat, point.lng));
@@ -289,6 +290,124 @@ function pushPositionIfDistinct(target: Position[], next: Position): void {
   target.push(next);
 }
 
+function getPerimeterSize(bbox: {
+  minLng: number; maxLng: number; minLat: number; maxLat: number
+}): number {
+  const width = bbox.maxLng - bbox.minLng;
+  const height = bbox.maxLat - bbox.minLat;
+  return 2 * (width + height);
+}
+
+function getPerimeterPosition(
+  point: Position,
+  bbox: { minLng: number; maxLng: number; minLat: number; maxLat: number },
+): number {
+  const [lng, lat] = point;
+  const width = bbox.maxLng - bbox.minLng;
+  const height = bbox.maxLat - bbox.minLat;
+  const distances = [
+    Math.abs(lat - bbox.minLat),
+    Math.abs(lng - bbox.maxLng),
+    Math.abs(lat - bbox.maxLat),
+    Math.abs(lng - bbox.minLng),
+  ];
+  const edgeIndex = distances.indexOf(Math.min(...distances));
+
+  switch (edgeIndex) {
+    case 0:
+      return lng - bbox.minLng;
+    case 1:
+      return width + (lat - bbox.minLat);
+    case 2:
+      return width + height + (bbox.maxLng - lng);
+    default:
+      return 2 * width + height + (bbox.maxLat - lat);
+  }
+}
+
+function pointAtPerimeterPosition(
+  position: number,
+  bbox: { minLng: number; maxLng: number; minLat: number; maxLat: number },
+): Position {
+  const width = bbox.maxLng - bbox.minLng;
+  const height = bbox.maxLat - bbox.minLat;
+  const perimeter = getPerimeterSize(bbox);
+  const normalized = ((position % perimeter) + perimeter) % perimeter;
+
+  if (normalized <= width) {
+    return [bbox.minLng + normalized, bbox.minLat];
+  }
+  if (normalized <= width + height) {
+    return [bbox.maxLng, bbox.minLat + (normalized - width)];
+  }
+  if (normalized <= 2 * width + height) {
+    return [bbox.maxLng - (normalized - width - height), bbox.maxLat];
+  }
+
+  return [bbox.minLng, bbox.maxLat - (normalized - 2 * width - height)];
+}
+
+function getPerimeterArc(
+  start: Position,
+  end: Position,
+  bbox: { minLng: number; maxLng: number; minLat: number; maxLat: number },
+  direction: PerimeterDirection,
+): { points: Position[]; midpoint: Position } {
+  const perimeter = getPerimeterSize(bbox);
+  const startPosition = getPerimeterPosition(start, bbox);
+  const endPosition = getPerimeterPosition(end, bbox);
+  const travel = direction === 'ccw'
+    ? ((endPosition - startPosition) % perimeter + perimeter) % perimeter
+    : ((startPosition - endPosition) % perimeter + perimeter) % perimeter;
+  const midpointPosition = direction === 'ccw'
+    ? startPosition + travel / 2
+    : startPosition - travel / 2;
+  const points: Position[] = [];
+
+  for (let index = 1; index < THERMOMETER_BISECTOR_SAMPLE_COUNT; index += 1) {
+    const offset = (travel * index) / THERMOMETER_BISECTOR_SAMPLE_COUNT;
+    const nextPosition = direction === 'ccw' ? startPosition + offset : startPosition - offset;
+    pushPositionIfDistinct(points, pointAtPerimeterPosition(nextPosition, bbox));
+  }
+
+  return {
+    points,
+    midpoint: pointAtPerimeterPosition(midpointPosition, bbox),
+  };
+}
+
+function signedArea(ring: Position[]): number {
+  let area = 0;
+  for (let index = 0; index < ring.length - 1; index += 1) {
+    area += ring[index][0] * ring[index + 1][1] - ring[index + 1][0] * ring[index][1];
+  }
+  return area;
+}
+
+function normalizeClosedRing(ring: Position[]): Position[] {
+  const normalized: Position[] = [];
+  for (const point of ring) {
+    pushPositionIfDistinct(normalized, point);
+  }
+
+  if (normalized.length === 0) {
+    return normalized;
+  }
+
+  const first = normalized[0];
+  const last = normalized[normalized.length - 1];
+  if (Math.abs(first[0] - last[0]) >= 1e-9 || Math.abs(first[1] - last[1]) >= 1e-9) {
+    normalized.push(first);
+  }
+
+  if (signedArea(normalized) < 0) {
+    const openRing = normalized.slice(0, -1).reverse();
+    return [...openRing, openRing[0]];
+  }
+
+  return normalized;
+}
+
 /**
  * Returns the two points where the perpendicular bisector of [start, end]
  * intersects the given bounding-box edges. This gives an edge-to-edge line
@@ -370,24 +489,16 @@ export function createThermometerAreaPolygon(
     };
   }
 
-  const ring: Position[] = [];
-  const firstIndex = playableCornerIndices[0];
-  for (let offset = 0; offset < playableCornerIndices.length; offset += 1) {
-    const index = (firstIndex + offset) % 4;
-    const corner = corners[index];
-    if (isPlayable(corner[0], corner[1])) {
-      pushPositionIfDistinct(ring, corner);
-    }
-  }
+  const pathStart = bisectorPath[0];
+  const pathEnd = bisectorPath[bisectorPath.length - 1];
+  const ccwArc = getPerimeterArc(pathEnd, pathStart, bbox, 'ccw');
+  const cwArc = getPerimeterArc(pathEnd, pathStart, bbox, 'cw');
+  const chosenArc = isPlayable(ccwArc.midpoint[0], ccwArc.midpoint[1]) ? ccwArc : cwArc;
 
-  const path = side > 0 ? [...bisectorPath].reverse() : bisectorPath;
-  for (const point of path) {
-    pushPositionIfDistinct(ring, point);
-  }
-
-  if (ring.length > 0) {
-    pushPositionIfDistinct(ring, ring[0]);
-  }
+  const ring = normalizeClosedRing([
+    ...bisectorPath,
+    ...chosenArc.points,
+  ]);
 
   return {
     type: 'Polygon',
