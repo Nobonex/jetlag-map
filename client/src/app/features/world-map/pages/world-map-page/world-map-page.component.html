@@ -79,6 +79,12 @@
         <ul nz-menu>
           <li
             nz-menu-item
+            (click)="toggleLocationTracking()"
+          >
+            {{ $isTrackingLocation() ? 'Hide location' : 'Show location' }}
+          </li>
+          <li
+            nz-menu-item
             [nzDisabled]="!$canClearSavedData()"
             (click)="confirmClearQuestions()"
           >

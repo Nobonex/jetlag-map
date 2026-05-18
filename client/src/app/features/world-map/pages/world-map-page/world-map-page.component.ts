@@ -72,6 +72,8 @@ export class WorldMapPageComponent implements AfterViewInit, OnDestroy {
   protected readonly $canClearSavedData = computed(
     () => this.$questions().length > 0 || this.$selectedCountryCode() !== null,
   );
+  protected readonly $isTrackingLocation = signal(false);
+  protected readonly $userLocation = signal<{ lat: number; lng: number } | null>(null);
 
   @ViewChild('mapContainer', { static: true })
   private readonly mapContainer?: ElementRef<HTMLDivElement>;
@@ -90,6 +92,7 @@ export class WorldMapPageComponent implements AfterViewInit, OnDestroy {
   private longPressStartPoint: ScreenPoint | null = null;
   private longPressSuppressUntil = 0;
   private contextMenuLatLng: L.LatLng | null = null;
+  private geolocationWatchId: number | null = null;
 
   private readonly onMobileSidebarQueryChange = (event: MediaQueryListEvent): void => {
     this.syncSidebarExpansion(event.matches);
@@ -99,6 +102,10 @@ export class WorldMapPageComponent implements AfterViewInit, OnDestroy {
     this.$questions();
     this.$selectedCountryCode();
     this.triggerRender(false);
+  });
+
+  private readonly syncUserLocationEffect = effect(() => {
+    this.worldMapRendererService.renderUserLocation(this.$userLocation());
   });
 
   async ngAfterViewInit(): Promise<void> {
@@ -111,6 +118,8 @@ export class WorldMapPageComponent implements AfterViewInit, OnDestroy {
 
   ngOnDestroy(): void {
     void this.syncRenderEffect;
+    void this.syncUserLocationEffect;
+    this.stopLocationTracking();
     this.detachResponsiveSidebarListener();
     this.clearLongPressTimer();
     this.worldMapRendererService.destroyMap();
@@ -253,6 +262,31 @@ export class WorldMapPageComponent implements AfterViewInit, OnDestroy {
     this.closeContextMenu();
   }
 
+  protected toggleLocationTracking(): void {
+    if (this.$isTrackingLocation()) {
+      this.stopLocationTracking();
+      return;
+    }
+
+    if (!navigator.geolocation) {
+      return;
+    }
+
+    this.$isTrackingLocation.set(true);
+    this.geolocationWatchId = navigator.geolocation.watchPosition(
+      (position) => {
+        this.$userLocation.set({
+          lat: position.coords.latitude,
+          lng: position.coords.longitude,
+        });
+      },
+      () => {
+        this.stopLocationTracking();
+      },
+      { enableHighAccuracy: true },
+    );
+  }
+
   protected confirmClearQuestions(): void {
     this.modalService.confirm({
       nzTitle: 'Clear saved data?',
@@ -324,6 +358,15 @@ export class WorldMapPageComponent implements AfterViewInit, OnDestroy {
     }
 
     return bounds;
+  }
+
+  private stopLocationTracking(): void {
+    if (this.geolocationWatchId !== null) {
+      navigator.geolocation.clearWatch(this.geolocationWatchId);
+      this.geolocationWatchId = null;
+    }
+    this.$isTrackingLocation.set(false);
+    this.$userLocation.set(null);
   }
 
   private clearSavedData(): void {

@@ -119,4 +119,41 @@ app-world-map-page {
     font-weight: 700;
     line-height: 1;
   }
+
+  .user-location-marker {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    position: relative;
+  }
+
+  .user-location-marker__ring {
+    position: absolute;
+    width: 22px;
+    height: 22px;
+    border-radius: 999px;
+    background: fade(#1a73e8, 28%);
+    animation: user-location-pulse 2s ease-out infinite;
+  }
+
+  .user-location-marker__dot {
+    position: relative;
+    width: 12px;
+    height: 12px;
+    border-radius: 999px;
+    border: 2px solid #ffffff;
+    background: #1a73e8;
+    box-shadow: 0 1px 4px fade(#1a3951, 28%);
+  }
+
+  @keyframes user-location-pulse {
+    0% {
+      transform: scale(0.5);
+      opacity: 1;
+    }
+    100% {
+      transform: scale(1.6);
+      opacity: 0;
+    }
+  }
 }
