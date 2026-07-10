@@ -546,12 +546,3 @@ export function createThermometerEndIcon(color: string): L.DivIcon {
     html: `<span class="thermometer-marker__dot" style="--marker-color: ${color}">B</span>`,
   });
 }
-
-export function createUserLocationIcon(): L.DivIcon {
-  return L.divIcon({
-    className: 'user-location-marker',
-    iconSize: [22, 22],
-    iconAnchor: [11, 11],
-    html: `<span class="user-location-marker__ring"></span><span class="user-location-marker__dot"></span>`,
-  });
-}

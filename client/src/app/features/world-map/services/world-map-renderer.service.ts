@@ -20,7 +20,6 @@ import {
   createThermometerAreaPolygon,
   createThermometerEndIcon,
   createThermometerStartIcon,
-  createUserLocationIcon,
   getBisectorPath,
   getBoundingBox,
   getAreaQuestionBounds,
@@ -218,24 +217,6 @@ export class WorldMapRendererService {
 
   getMap(): L.Map | undefined {
     return this.map;
-  }
-
-  renderUserLocation(location: { lat: number; lng: number } | null): void {
-    if (this.userLocationLayer && this.map) {
-      this.userLocationLayer.removeFrom(this.map);
-    }
-
-    this.userLocationLayer = undefined;
-
-    if (!location || !this.map) {
-      return;
-    }
-
-    this.userLocationLayer = L.marker([location.lat, location.lng], {
-      icon: createUserLocationIcon(),
-      interactive: false,
-      zIndexOffset: 1000,
-    }).addTo(this.map);
   }
 
   private renderQuestionLayer(
