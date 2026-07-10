@@ -98,9 +98,24 @@ export class WorldMapStateService {
       if (state.country) {
         await this.countryBoundaryService.loadDetailedCountryGeometry(state.country);
       }
+      this.consumeSharedStateHash();
       return true;
     } catch {
       return false;
+    }
+  }
+
+  private consumeSharedStateHash(): void {
+    try {
+      const hashParams = new URLSearchParams(globalThis.location.hash.slice(1));
+      hashParams.delete(SHARED_STATE_HASH_KEY);
+
+      const url = new URL(globalThis.location.href);
+      const remainingHash = hashParams.toString();
+      url.hash = remainingHash ? remainingHash : '';
+      globalThis.history.replaceState(globalThis.history.state, '', url);
+    } catch {
+      // The imported state is already persisted if the URL cannot be updated.
     }
   }
 

@@ -74,7 +74,7 @@ describe('WorldMapPageComponent', () => {
     expect(compiled.querySelector('.app-brand')?.textContent).toContain('JetLag');
     expect(compiled.querySelector('nz-select')).not.toBeNull();
     expect(compiled.querySelector('.share-button')?.textContent).toContain('Share');
-    expect(compiled.querySelector('.question-sidebar')).not.toBeNull();
+    expect(compiled.querySelector('.question-sidebar')?.getAttribute('tabindex')).toBe('0');
   });
 
   it('should restore a persisted selected country', async () => {
@@ -143,6 +143,7 @@ describe('WorldMapPageComponent', () => {
     expect(questionsService.$questions()).toHaveLength(1);
     expect(questionsService.$questions()[0].title).toBe('Lisbon café');
     expect(questionsService.$questions()[0].type).toBe('area');
+    expect(globalThis.location.hash).toBe('');
   });
 
   it('should build, close, and render a drawn area question', async () => {

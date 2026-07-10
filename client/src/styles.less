@@ -193,3 +193,30 @@ app-world-map-page {
     animation: none;
   }
 }
+
+app-world-map-page .question-sidebar {
+  min-height: 0;
+  height: calc(100dvh - var(--header-height));
+  overflow-y: auto;
+  overscroll-behavior-y: contain;
+  scrollbar-gutter: stable;
+}
+
+app-world-map-page .question-sidebar:focus-visible {
+  outline: 3px solid fade(#315977, 52%);
+  outline-offset: -3px;
+}
+
+@media (max-width: 720px) {
+  app-world-map-page .question-sidebar {
+    height: auto;
+    max-height: calc(100dvh - var(--header-height-mobile));
+  }
+
+  app-world-map-page .question-sidebar.is-collapsed {
+    max-height: 0;
+    padding-block: 0;
+    overflow: hidden;
+    border-bottom: 0;
+  }
+}
