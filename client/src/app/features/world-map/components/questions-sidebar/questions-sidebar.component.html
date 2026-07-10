@@ -19,6 +19,13 @@
           (deleteRequest)="onDeleteRequest($event)"
         />
       }
+      @case ('area') {
+        <app-area-question-card
+          [question]="$any(question)"
+          [index]="getTypeIndex($index)"
+          (deleteRequest)="onDeleteRequest($event)"
+        />
+      }
     }
   }
 } @else {

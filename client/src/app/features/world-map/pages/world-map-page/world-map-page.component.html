@@ -59,6 +59,7 @@
         class="map-container"
         aria-label="World map"
         (contextmenu)="onMapContextMenu($event)"
+        (click)="onMapClick($event)"
         (pointerdown)="onMapPointerDown($event)"
         (pointermove)="onMapPointerMove($event)"
         (pointerup)="onMapPointerUp()"
@@ -130,6 +131,16 @@
             (click)="addThermometerQuestion()"
           >
             Thermometer
+          </button>
+          <button
+            type="button"
+            class="map-context-menu-action"
+            nz-button
+            nzType="text"
+            [disabled]="$drawingAreaQuestionId() !== null"
+            (click)="addAreaQuestion()"
+          >
+            {{ $drawingAreaQuestionId() ? 'Finish current area first' : 'Draw area' }}
           </button>
         </nz-card>
       }

@@ -3,6 +3,7 @@ import * as L from 'leaflet';
 import { intersectGeometry } from './map-mask.util';
 
 import {
+  createAreaPolygon,
   createThermometerAreaPolygon,
   getBisectorPath,
   getBisectorEdgePoints,
@@ -10,6 +11,23 @@ import {
   getBoundingBox,
   normalizeLongitude,
 } from './geometry.util';
+
+describe('createAreaPolygon', () => {
+  it('converts map points to a closed GeoJSON ring', () => {
+    const polygon = createAreaPolygon([
+      { lat: 10, lng: 20 },
+      { lat: 15, lng: 25 },
+      { lat: 5, lng: 30 },
+    ]);
+
+    expect(polygon.coordinates[0]).toEqual([
+      [20, 10],
+      [25, 15],
+      [30, 5],
+      [20, 10],
+    ]);
+  });
+});
 
 function toProjectedPoint(lng: number, lat: number): { x: number; y: number } {
   const projected = L.CRS.EPSG3857.project(L.latLng(lat, lng));

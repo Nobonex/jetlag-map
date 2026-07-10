@@ -1,10 +1,12 @@
 import { TestBed } from '@angular/core/testing';
 import { provideAnimationsAsync } from '@angular/platform-browser/animations/async';
+import * as L from 'leaflet';
 import { en_US, provideNzI18n } from 'ng-zorro-antd/i18n';
 
 import { CountryBoundaryService } from '../../services/country-boundary.service';
 import { QuestionsService } from '../../services/questions.service';
 import { WorldMapStateService } from '../../services/world-map-state.service';
+import { WorldMapRendererService } from '../../services/world-map-renderer.service';
 import { WorldMapPageComponent } from './world-map-page.component';
 
 const SELECTED_COUNTRY_STORAGE_KEY = 'jetlag.selected-country.v1';
@@ -119,8 +121,11 @@ describe('WorldMapPageComponent', () => {
     const questionsService = TestBed.inject(QuestionsService);
     const worldMapStateService = TestBed.inject(WorldMapStateService);
     worldMapStateService.setSelectedCountry('AFG');
-    questionsService.addRadarQuestion({ lat: 38.72, lng: -9.14 });
-    questionsService.updateQuestionTitle('radar-1', 'Lisbon café');
+    questionsService.addAreaQuestion({ lat: 38.72, lng: -9.14 });
+    questionsService.addAreaVertex('area-1', { lat: 38.75, lng: -9.1 });
+    questionsService.addAreaVertex('area-1', { lat: 38.68, lng: -9.08 });
+    questionsService.closeAreaQuestion('area-1');
+    questionsService.updateQuestionTitle('area-1', 'Lisbon café');
     const shareLink = worldMapStateService.createShareLink();
 
     worldMapStateService.clearSavedData();
@@ -137,6 +142,38 @@ describe('WorldMapPageComponent', () => {
     expect(fixture.componentInstance['$selectedCountryCode']()).toBe('AFG');
     expect(questionsService.$questions()).toHaveLength(1);
     expect(questionsService.$questions()[0].title).toBe('Lisbon café');
-    expect(questionsService.$questions()[0].type).toBe('radar');
+    expect(questionsService.$questions()[0].type).toBe('area');
+  });
+
+  it('should build, close, and render a drawn area question', async () => {
+    const fixture = TestBed.createComponent(WorldMapPageComponent);
+    vi.spyOn(fixture.componentInstance as any, 'initializeMap').mockImplementation(() => {});
+    fixture.detectChanges();
+    await fixture.whenStable();
+
+    const questionsService = TestBed.inject(QuestionsService);
+    const renderer = TestBed.inject(WorldMapRendererService);
+    questionsService.addAreaQuestion({ lat: 10, lng: 20 });
+    vi.spyOn(renderer, 'mouseEventToLatLng')
+      .mockReturnValueOnce(L.latLng(15, 25))
+      .mockReturnValueOnce(L.latLng(5, 30));
+    fixture.componentInstance['onMapClick'](new MouseEvent('click'));
+    fixture.componentInstance['onMapClick'](new MouseEvent('click'));
+
+    expect(fixture.componentInstance['$drawingAreaQuestionId']()).toBe('area-1');
+    questionsService.closeAreaQuestion('area-1');
+    questionsService.updateAreaMode('area-1', 'outside');
+    fixture.detectChanges();
+
+    const areaQuestion = questionsService.$questions()[0];
+    expect(areaQuestion.type).toBe('area');
+    if (areaQuestion.type !== 'area') {
+      throw new Error('Expected an area question');
+    }
+    expect(areaQuestion.vertices).toHaveLength(3);
+    expect(areaQuestion.isClosed).toBe(true);
+    expect(areaQuestion.applied.mode).toBe('outside');
+    expect(fixture.componentInstance['$drawingAreaQuestionId']()).toBeNull();
+    expect(fixture.nativeElement.querySelector('app-area-question-card')).not.toBeNull();
   });
 });

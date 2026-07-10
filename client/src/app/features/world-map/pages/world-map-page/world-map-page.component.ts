@@ -25,9 +25,10 @@ import { QuestionsService } from '../../services/questions.service';
 import { WorldMapRendererService } from '../../services/world-map-renderer.service';
 import { WorldMapStateService } from '../../services/world-map-state.service';
 import { QuestionsSidebarComponent } from '../../components/questions-sidebar/questions-sidebar.component';
+import { isAreaQuestion } from '../../models/radar-question.model';
 
 const CONTEXT_MENU_WIDTH = 220;
-const CONTEXT_MENU_HEIGHT = 90;
+const CONTEXT_MENU_HEIGHT = 130;
 const CONTEXT_MENU_MARGIN = 12;
 const LONG_PRESS_DURATION_MS = 550;
 const LONG_PRESS_MOVE_THRESHOLD_PX = 10;
@@ -75,6 +76,9 @@ export class WorldMapPageComponent implements AfterViewInit, OnDestroy {
   );
   protected readonly $isTrackingLocation = signal(false);
   protected readonly $userLocation = signal<{ lat: number; lng: number } | null>(null);
+  protected readonly $drawingAreaQuestionId = computed(
+    () => this.$questions().find((question) => isAreaQuestion(question) && !question.isClosed)?.id ?? null,
+  );
 
   @ViewChild('mapContainer', { static: true })
   private readonly mapContainer?: ElementRef<HTMLDivElement>;
@@ -177,6 +181,19 @@ export class WorldMapPageComponent implements AfterViewInit, OnDestroy {
     }
 
     this.openContextMenu(event.clientX, event.clientY, latLng);
+  }
+
+  protected onMapClick(event: MouseEvent): void {
+    const questionId = this.$drawingAreaQuestionId();
+    const target = event.target;
+    if (!questionId || (target instanceof Element && target.closest('.leaflet-marker-icon'))) {
+      return;
+    }
+
+    const point = this.worldMapRendererService.mouseEventToLatLng(event);
+    if (point) {
+      this.questionsService.addAreaVertex(questionId, { lat: point.lat, lng: point.lng });
+    }
   }
 
   protected onMapPointerDown(event: PointerEvent): void {
@@ -292,6 +309,21 @@ export class WorldMapPageComponent implements AfterViewInit, OnDestroy {
     );
   }
 
+  protected addAreaQuestion(): void {
+    if (this.$drawingAreaQuestionId()) {
+      this.closeContextMenu();
+      return;
+    }
+
+    const start = this.contextMenuLatLng ?? this.getQuestionsBounds()?.getCenter();
+    if (!start) {
+      return;
+    }
+
+    this.questionsService.addAreaQuestion({ lat: start.lat, lng: start.lng });
+    this.closeContextMenu();
+  }
+
   protected confirmClearQuestions(): void {
     this.modalService.confirm({
       nzTitle: 'Clear saved data?',
@@ -344,7 +376,9 @@ export class WorldMapPageComponent implements AfterViewInit, OnDestroy {
       headerHeight,
       shouldFitMap,
       (questionId, point, which) => {
-        if (which === 'center') {
+        if (typeof which === 'number') {
+          this.questionsService.updateAreaVertex(questionId, which, point);
+        } else if (which === 'center') {
           this.questionsService.updateQuestionCenter(questionId, point);
         } else if (which === 'start') {
           this.questionsService.updateThermometerStart(questionId, point);
@@ -352,6 +386,7 @@ export class WorldMapPageComponent implements AfterViewInit, OnDestroy {
           this.questionsService.updateThermometerEnd(questionId, point);
         }
       },
+      (questionId) => this.questionsService.closeAreaQuestion(questionId),
     );
   }
 

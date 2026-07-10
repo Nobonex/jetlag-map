@@ -3,12 +3,13 @@ import { NzModalService } from 'ng-zorro-antd/modal';
 
 import { RadarQuestionCardComponent } from '../radar-question-card/radar-question-card.component';
 import { ThermometerQuestionCardComponent } from '../thermometer-question-card/thermometer-question-card.component';
+import { AreaQuestionCardComponent } from '../area-question-card/area-question-card.component';
 import type { GameQuestion } from '../../models/radar-question.model';
 import { QuestionsService } from '../../services/questions.service';
 
 @Component({
   selector: 'app-questions-sidebar',
-  imports: [RadarQuestionCardComponent, ThermometerQuestionCardComponent],
+  imports: [AreaQuestionCardComponent, RadarQuestionCardComponent, ThermometerQuestionCardComponent],
   templateUrl: './questions-sidebar.component.html',
   styleUrl: './questions-sidebar.component.less',
   changeDetection: ChangeDetectionStrategy.OnPush,

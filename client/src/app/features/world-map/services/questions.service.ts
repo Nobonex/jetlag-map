@@ -6,7 +6,9 @@ import type {
   RadarMode,
   RadarQuestion,
 } from '../models/radar-question.model';
+import { isAreaQuestion } from '../models/radar-question.model';
 import type { ThermometerMode, ThermometerQuestion } from '../models/thermometer-question.model';
+import type { AreaMode, AreaQuestion } from '../models/area-question.model';
 
 const DEFAULT_RADAR_RADIUS_KM = 50;
 const COLOR_PALETTE = [
@@ -25,6 +27,7 @@ export class QuestionsService {
   readonly $questions = this.$questionsSignal.asReadonly();
   private nextRadarQuestionId = 1;
   private nextThermometerQuestionId = 1;
+  private nextAreaQuestionId = 1;
 
   constructor() {
     this.restoreQuestions();
@@ -84,6 +87,78 @@ export class QuestionsService {
     ]);
 
     this.persistQuestions();
+  }
+
+  addAreaQuestion(start: QuestionCenter): void {
+    const questionId = `area-${this.nextAreaQuestionId++}`;
+    const color = COLOR_PALETTE[this.$questionsSignal().length % COLOR_PALETTE.length];
+
+    this.$questionsSignal.update((questions) => [
+      ...questions,
+      {
+        id: questionId,
+        color,
+        type: 'area',
+        isCollapsed: false,
+        isLocked: false,
+        center: start,
+        vertices: [start],
+        isClosed: false,
+        title: 'Area',
+        applied: { mode: 'inside' },
+        draft: { mode: 'inside' },
+      } as AreaQuestion,
+    ]);
+
+    this.persistQuestions();
+  }
+
+  addAreaVertex(questionId: string, point: QuestionCenter): void {
+    this.updateQuestion(questionId, (question) => {
+      if (!isAreaQuestion(question) || question.isClosed || question.isLocked) {
+        return question;
+      }
+
+      const previous = question.vertices[question.vertices.length - 1];
+      if (previous && Math.hypot(previous.lat - point.lat, previous.lng - point.lng) < 1e-8) {
+        return question;
+      }
+
+      return { ...question, vertices: [...question.vertices, point] };
+    });
+  }
+
+  updateAreaVertex(questionId: string, vertexIndex: number, point: QuestionCenter): void {
+    this.updateQuestion(questionId, (question) => {
+      if (!isAreaQuestion(question) || !question.vertices[vertexIndex]) {
+        return question;
+      }
+
+      const vertices = question.vertices.map((vertex, index) =>
+        index === vertexIndex ? point : vertex,
+      );
+      return {
+        ...question,
+        center: vertexIndex === 0 ? point : question.center,
+        vertices,
+      };
+    });
+  }
+
+  closeAreaQuestion(questionId: string): void {
+    this.updateQuestion(questionId, (question) =>
+      isAreaQuestion(question) && question.vertices.length >= 3
+        ? { ...question, isClosed: true }
+        : question,
+    );
+  }
+
+  updateAreaMode(questionId: string, mode: AreaMode): void {
+    this.updateQuestion(questionId, (question) =>
+      isAreaQuestion(question)
+        ? { ...question, applied: { mode }, draft: { mode } }
+        : question,
+    );
   }
 
   updateDraftMode(questionId: string, mode: RadarMode): void {
@@ -181,7 +256,7 @@ export class QuestionsService {
     const trimmed = title.trim();
     this.updateQuestion(questionId, (question) => ({
       ...question,
-      title: trimmed.length > 0 ? trimmed : question.type === 'radar' ? 'Radar' : 'Thermometer',
+      title: trimmed.length > 0 ? trimmed : getDefaultQuestionTitle(question),
     }));
   }
 
@@ -194,6 +269,7 @@ export class QuestionsService {
     this.$questionsSignal.set([]);
     this.nextRadarQuestionId = 1;
     this.nextThermometerQuestionId = 1;
+    this.nextAreaQuestionId = 1;
     this.persistQuestions();
   }
 
@@ -205,6 +281,7 @@ export class QuestionsService {
     this.$questionsSignal.set(value);
     this.nextRadarQuestionId = getNextQuestionId(value, 'radar');
     this.nextThermometerQuestionId = getNextQuestionId(value, 'thermometer');
+    this.nextAreaQuestionId = getNextQuestionId(value, 'area');
     this.persistQuestions();
     return true;
   }
@@ -242,6 +319,7 @@ export class QuestionsService {
 
       this.nextRadarQuestionId = getNextQuestionId(restoredQuestions, 'radar');
       this.nextThermometerQuestionId = getNextQuestionId(restoredQuestions, 'thermometer');
+      this.nextAreaQuestionId = getNextQuestionId(restoredQuestions, 'area');
     } catch {
       storage.removeItem(QUESTIONS_STORAGE_KEY);
     }
@@ -256,6 +334,7 @@ export class QuestionsService {
     const payload: PersistedQuestions = {
       nextRadarQuestionId: this.nextRadarQuestionId,
       nextThermometerQuestionId: this.nextThermometerQuestionId,
+      nextAreaQuestionId: this.nextAreaQuestionId,
       questions: this.$questionsSignal(),
     };
 
@@ -278,11 +357,12 @@ function getStorage(): Storage | null {
 interface PersistedQuestions {
   nextRadarQuestionId?: number;
   nextThermometerQuestionId?: number;
+  nextAreaQuestionId?: number;
   questions: GameQuestion[];
 }
 
-function getNextQuestionId(questions: GameQuestion[], type: 'radar' | 'thermometer'): number {
-  const prefix = type === 'radar' ? 'radar-' : 'thermometer-';
+function getNextQuestionId(questions: GameQuestion[], type: GameQuestion['type']): number {
+  const prefix = `${type}-`;
   const highestNumericId = questions.reduce((maxId, question) => {
     if (!question.id.startsWith(prefix)) {
       return maxId;
@@ -324,6 +404,19 @@ function isValidQuestion(value: unknown): value is GameQuestion {
     );
   }
 
+  if (question.type === 'area') {
+    const area = question as Partial<AreaQuestion>;
+    return (
+      typeof area.isClosed === 'boolean' &&
+      Array.isArray(area.vertices) &&
+      area.vertices.length >= 1 &&
+      (!area.isClosed || area.vertices.length >= 3) &&
+      area.vertices.every(isQuestionCenter) &&
+      isAreaSettings(area.applied) &&
+      isAreaSettings(area.draft)
+    );
+  }
+
   return false;
 }
 
@@ -333,7 +426,36 @@ function isQuestionCenter(value: unknown): value is QuestionCenter {
   }
 
   const center = value as Partial<QuestionCenter>;
-  return typeof center.lat === 'number' && typeof center.lng === 'number';
+  return (
+    typeof center.lat === 'number' &&
+    Number.isFinite(center.lat) &&
+    center.lat >= -90 &&
+    center.lat <= 90 &&
+    typeof center.lng === 'number' &&
+    Number.isFinite(center.lng) &&
+    center.lng >= -180 &&
+    center.lng <= 180
+  );
+}
+
+function getDefaultQuestionTitle(question: GameQuestion): string {
+  switch (question.type) {
+    case 'radar':
+      return 'Radar';
+    case 'thermometer':
+      return 'Thermometer';
+    case 'area':
+      return 'Area';
+  }
+}
+
+function isAreaSettings(value: unknown): value is { mode: AreaMode } {
+  if (!value || typeof value !== 'object') {
+    return false;
+  }
+
+  const settings = value as { mode?: unknown };
+  return settings.mode === 'inside' || settings.mode === 'outside';
 }
 
 function isRadarSettings(value: unknown): value is { mode: 'inside' | 'outside'; radiusKm: number } {

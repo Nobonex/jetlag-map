@@ -3,6 +3,7 @@ import type { Question, QuestionCenter } from './question.model';
 export type ThermometerMode = 'warmer' | 'colder';
 
 export interface ThermometerQuestion extends Question {
+  type: 'thermometer';
   start: QuestionCenter;
   end: QuestionCenter;
   applied: {

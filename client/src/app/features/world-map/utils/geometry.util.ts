@@ -4,6 +4,7 @@ import * as L from 'leaflet';
 import type { RadarQuestion } from '../models/radar-question.model';
 import type { QuestionCenter } from '../models/question.model';
 import type { ThermometerMode } from '../models/thermometer-question.model';
+import type { AreaQuestion } from '../models/area-question.model';
 
 const RADAR_CIRCLE_POINT_COUNT = 96;
 
@@ -123,6 +124,28 @@ export function getRadarQuestionBounds(question: RadarQuestion): L.LatLngBounds 
   };
 
   return L.geoJSON(radarFeature).getBounds();
+}
+
+export function createAreaPolygon(vertices: QuestionCenter[]): Polygon {
+  const coordinates: Position[] = vertices.map((vertex) => [vertex.lng, vertex.lat]);
+  if (coordinates.length > 0) {
+    coordinates.push([...coordinates[0]]);
+  }
+
+  return { type: 'Polygon', coordinates: [coordinates] };
+}
+
+export function getAreaQuestionBounds(question: AreaQuestion): L.LatLngBounds {
+  return L.latLngBounds(question.vertices.map((vertex) => L.latLng(vertex.lat, vertex.lng)));
+}
+
+export function createAreaVertexIcon(color: string, index: number, canClose: boolean): L.DivIcon {
+  return L.divIcon({
+    className: `area-vertex-marker${canClose ? ' area-vertex-marker--close' : ''}`,
+    iconSize: canClose ? [28, 28] : [22, 22],
+    iconAnchor: canClose ? [14, 14] : [11, 11],
+    html: `<span class="area-vertex-marker__dot" style="--marker-color: ${color}">${index + 1}</span>`,
+  });
 }
 
 export function getBisectorPoints(

@@ -3,7 +3,7 @@ export interface QuestionCenter {
   lng: number;
 }
 
-export type QuestionType = 'radar' | 'thermometer';
+export type QuestionType = 'radar' | 'thermometer' | 'area';
 
 export interface BaseQuestion {
   id: string;

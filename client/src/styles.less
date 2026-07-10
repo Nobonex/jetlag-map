@@ -156,4 +156,33 @@ app-world-map-page {
       opacity: 0;
     }
   }
+
+  .area-vertex-marker {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  .area-vertex-marker__dot {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 22px;
+    height: 22px;
+    border-radius: 999px;
+    border: 2px solid #ffffff;
+    background: var(--marker-color, #1f8b5d);
+    box-shadow: 0 0 0 2px fade(#1a3951, 28%);
+    color: #ffffff;
+    font-size: 10px;
+    font-weight: 700;
+  }
+
+  .area-vertex-marker--close .area-vertex-marker__dot {
+    width: 28px;
+    height: 28px;
+    box-shadow:
+      0 0 0 3px #ffffff,
+      0 0 0 6px fade(#1a3951, 42%);
+  }
 }
