@@ -447,8 +447,7 @@ export class WorldMapRendererService {
           color: question.color,
           weight: 2.5,
           opacity: 0.95,
-          fillColor: question.color,
-          fillOpacity: 0.12,
+          fill: false,
           interactive: false,
         })
       : L.polyline(points, {
