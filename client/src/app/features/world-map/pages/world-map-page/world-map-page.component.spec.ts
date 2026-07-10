@@ -3,6 +3,8 @@ import { provideAnimationsAsync } from '@angular/platform-browser/animations/asy
 import { en_US, provideNzI18n } from 'ng-zorro-antd/i18n';
 
 import { CountryBoundaryService } from '../../services/country-boundary.service';
+import { QuestionsService } from '../../services/questions.service';
+import { WorldMapStateService } from '../../services/world-map-state.service';
 import { WorldMapPageComponent } from './world-map-page.component';
 
 const SELECTED_COUNTRY_STORAGE_KEY = 'jetlag.selected-country.v1';
@@ -12,6 +14,7 @@ describe('WorldMapPageComponent', () => {
 
   beforeEach(async () => {
     globalThis.localStorage.clear();
+    globalThis.history.replaceState(null, '', '/');
 
     globalThis.fetch = vi.fn(async (input: string | URL | Request) => {
       const url = String(
@@ -68,6 +71,7 @@ describe('WorldMapPageComponent', () => {
 
     expect(compiled.querySelector('.app-brand')?.textContent).toContain('JetLag');
     expect(compiled.querySelector('nz-select')).not.toBeNull();
+    expect(compiled.querySelector('.share-button')?.textContent).toContain('Share');
     expect(compiled.querySelector('.question-sidebar')).not.toBeNull();
   });
 
@@ -109,5 +113,30 @@ describe('WorldMapPageComponent', () => {
     fixture.componentInstance['onSelectedCountryChange'](null);
 
     expect(globalThis.localStorage.getItem(SELECTED_COUNTRY_STORAGE_KEY)).toBeNull();
+  });
+
+  it('should restore the state embedded in a share link instead of local state', async () => {
+    const questionsService = TestBed.inject(QuestionsService);
+    const worldMapStateService = TestBed.inject(WorldMapStateService);
+    worldMapStateService.setSelectedCountry('AFG');
+    questionsService.addRadarQuestion({ lat: 38.72, lng: -9.14 });
+    questionsService.updateQuestionTitle('radar-1', 'Lisbon café');
+    const shareLink = worldMapStateService.createShareLink();
+
+    worldMapStateService.clearSavedData();
+    questionsService.addThermometerQuestion({ lat: 1, lng: 2 }, { lat: 3, lng: 4 });
+    globalThis.location.hash = new URL(shareLink).hash;
+
+    const fixture = TestBed.createComponent(WorldMapPageComponent);
+    const countryBoundaryService = TestBed.inject(CountryBoundaryService);
+    vi.spyOn(fixture.componentInstance as any, 'initializeMap').mockImplementation(() => {});
+    vi.spyOn(countryBoundaryService, 'loadDetailedCountryGeometry').mockResolvedValue();
+    fixture.detectChanges();
+    await fixture.whenStable();
+
+    expect(fixture.componentInstance['$selectedCountryCode']()).toBe('AFG');
+    expect(questionsService.$questions()).toHaveLength(1);
+    expect(questionsService.$questions()[0].title).toBe('Lisbon café');
+    expect(questionsService.$questions()[0].type).toBe('radar');
   });
 });

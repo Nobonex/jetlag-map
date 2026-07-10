@@ -64,6 +64,7 @@ export class WorldMapPageComponent implements AfterViewInit, OnDestroy {
   private readonly modalService = inject(NzModalService);
 
   protected readonly $isSidebarExpanded = signal(true);
+  protected readonly $shareButtonLabel = signal('Share');
   protected readonly $contextMenuPosition = signal<ContextMenuPosition | null>(null);
   protected readonly $selectedCountryCode = this.worldMapStateService.$selectedCountryCode;
   protected readonly $questions = this.questionsService.$questions;
@@ -93,6 +94,7 @@ export class WorldMapPageComponent implements AfterViewInit, OnDestroy {
   private longPressSuppressUntil = 0;
   private contextMenuLatLng: L.LatLng | null = null;
   private geolocationWatchId: number | null = null;
+  private shareLabelTimer: ReturnType<typeof setTimeout> | null = null;
 
   private readonly onMobileSidebarQueryChange = (event: MediaQueryListEvent): void => {
     this.syncSidebarExpansion(event.matches);
@@ -122,6 +124,9 @@ export class WorldMapPageComponent implements AfterViewInit, OnDestroy {
     this.stopLocationTracking();
     this.detachResponsiveSidebarListener();
     this.clearLongPressTimer();
+    if (this.shareLabelTimer) {
+      clearTimeout(this.shareLabelTimer);
+    }
     this.worldMapRendererService.destroyMap();
   }
 
@@ -299,6 +304,17 @@ export class WorldMapPageComponent implements AfterViewInit, OnDestroy {
     });
   }
 
+  protected async shareState(): Promise<void> {
+    const shareLink = this.worldMapStateService.createShareLink();
+    const copied = await copyText(shareLink);
+    this.$shareButtonLabel.set(copied ? 'Link copied' : 'Copy failed');
+
+    if (this.shareLabelTimer) {
+      clearTimeout(this.shareLabelTimer);
+    }
+    this.shareLabelTimer = setTimeout(() => this.$shareButtonLabel.set('Share'), 2000);
+  }
+
   protected closeContextMenu(): void {
     this.$contextMenuPosition.set(null);
     this.contextMenuLatLng = null;
@@ -434,4 +450,25 @@ interface ContextMenuPosition {
 interface ScreenPoint {
   x: number;
   y: number;
+}
+
+async function copyText(value: string): Promise<boolean> {
+  try {
+    if (globalThis.navigator.clipboard) {
+      await globalThis.navigator.clipboard.writeText(value);
+      return true;
+    }
+
+    const textArea = document.createElement('textarea');
+    textArea.value = value;
+    textArea.style.position = 'fixed';
+    textArea.style.opacity = '0';
+    document.body.append(textArea);
+    textArea.select();
+    const copied = document.execCommand('copy');
+    textArea.remove();
+    return copied;
+  } catch {
+    return false;
+  }
 }

@@ -197,6 +197,18 @@ export class QuestionsService {
     this.persistQuestions();
   }
 
+  replaceQuestions(value: unknown): boolean {
+    if (!Array.isArray(value) || !value.every(isValidQuestion)) {
+      return false;
+    }
+
+    this.$questionsSignal.set(value);
+    this.nextRadarQuestionId = getNextQuestionId(value, 'radar');
+    this.nextThermometerQuestionId = getNextQuestionId(value, 'thermometer');
+    this.persistQuestions();
+    return true;
+  }
+
   private updateQuestion(
     questionId: string,
     updater: (question: GameQuestion) => GameQuestion,

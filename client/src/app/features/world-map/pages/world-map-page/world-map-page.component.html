@@ -2,6 +2,9 @@
   <nz-header #appHeader class="app-header">
     <div class="header-primary">
       <span class="app-brand" nz-typography>JetLag</span>
+      <button type="button" class="share-button" nz-button nzShape="round" (click)="shareState()">
+        {{ $shareButtonLabel() }}
+      </button>
       <button
         type="button"
         class="header-sidebar-toggle"
