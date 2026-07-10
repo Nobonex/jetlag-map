@@ -26,6 +26,7 @@ import { WorldMapRendererService } from '../../services/world-map-renderer.servi
 import { WorldMapStateService } from '../../services/world-map-state.service';
 import { QuestionsSidebarComponent } from '../../components/questions-sidebar/questions-sidebar.component';
 import { isAreaQuestion } from '../../models/radar-question.model';
+import { UserLocationService } from '../../services/user-location.service';
 
 const CONTEXT_MENU_WIDTH = 220;
 const CONTEXT_MENU_HEIGHT = 130;
@@ -63,6 +64,7 @@ export class WorldMapPageComponent implements AfterViewInit, OnDestroy {
   private readonly worldMapStateService = inject(WorldMapStateService);
   private readonly worldMapRendererService = inject(WorldMapRendererService);
   private readonly modalService = inject(NzModalService);
+  private readonly userLocationService = inject(UserLocationService);
 
   protected readonly $isSidebarExpanded = signal(true);
   protected readonly $shareButtonLabel = signal('Share');
@@ -71,11 +73,17 @@ export class WorldMapPageComponent implements AfterViewInit, OnDestroy {
   protected readonly $questions = this.questionsService.$questions;
   protected readonly $countryOptions = this.countryBoundaryService.$countryOptions;
   protected readonly $isLoadingCountries = this.countryBoundaryService.$isLoadingCountries;
+  protected readonly $isTrackingLocation = this.userLocationService.$isTracking;
+  protected readonly $locationMenuLabel = computed(() => {
+    if (this.$isTrackingLocation()) {
+      return 'Hide my location';
+    }
+    return this.userLocationService.$error() ?? 'Show my location';
+  });
+  protected readonly isLocationSupported = this.userLocationService.isSupported;
   protected readonly $canClearSavedData = computed(
     () => this.$questions().length > 0 || this.$selectedCountryCode() !== null,
   );
-  protected readonly $isTrackingLocation = signal(false);
-  protected readonly $userLocation = signal<{ lat: number; lng: number } | null>(null);
   protected readonly $drawingAreaQuestionId = computed(
     () => this.$questions().find((question) => isAreaQuestion(question) && !question.isClosed)?.id ?? null,
   );
@@ -97,7 +105,6 @@ export class WorldMapPageComponent implements AfterViewInit, OnDestroy {
   private longPressStartPoint: ScreenPoint | null = null;
   private longPressSuppressUntil = 0;
   private contextMenuLatLng: L.LatLng | null = null;
-  private geolocationWatchId: number | null = null;
   private shareLabelTimer: ReturnType<typeof setTimeout> | null = null;
 
   private readonly onMobileSidebarQueryChange = (event: MediaQueryListEvent): void => {
@@ -111,7 +118,12 @@ export class WorldMapPageComponent implements AfterViewInit, OnDestroy {
   });
 
   private readonly syncUserLocationEffect = effect(() => {
-    this.worldMapRendererService.renderUserLocation(this.$userLocation());
+    const position = this.userLocationService.$position();
+    if (position) {
+      this.worldMapRendererService.showUserLocation(position);
+    } else {
+      this.worldMapRendererService.clearUserLocation();
+    }
   });
 
   async ngAfterViewInit(): Promise<void> {
@@ -125,7 +137,7 @@ export class WorldMapPageComponent implements AfterViewInit, OnDestroy {
   ngOnDestroy(): void {
     void this.syncRenderEffect;
     void this.syncUserLocationEffect;
-    this.stopLocationTracking();
+    this.userLocationService.stop();
     this.detachResponsiveSidebarListener();
     this.clearLongPressTimer();
     if (this.shareLabelTimer) {
@@ -284,31 +296,6 @@ export class WorldMapPageComponent implements AfterViewInit, OnDestroy {
     this.closeContextMenu();
   }
 
-  protected toggleLocationTracking(): void {
-    if (this.$isTrackingLocation()) {
-      this.stopLocationTracking();
-      return;
-    }
-
-    if (!navigator.geolocation) {
-      return;
-    }
-
-    this.$isTrackingLocation.set(true);
-    this.geolocationWatchId = navigator.geolocation.watchPosition(
-      (position) => {
-        this.$userLocation.set({
-          lat: position.coords.latitude,
-          lng: position.coords.longitude,
-        });
-      },
-      () => {
-        this.stopLocationTracking();
-      },
-      { enableHighAccuracy: true },
-    );
-  }
-
   protected addAreaQuestion(): void {
     if (this.$drawingAreaQuestionId()) {
       this.closeContextMenu();
@@ -334,6 +321,15 @@ export class WorldMapPageComponent implements AfterViewInit, OnDestroy {
       nzCancelText: 'Cancel',
       nzOnOk: () => this.clearSavedData(),
     });
+  }
+
+  protected toggleUserLocation(): void {
+    if (this.$isTrackingLocation()) {
+      this.userLocationService.stop();
+      return;
+    }
+
+    this.userLocationService.start();
   }
 
   protected async shareState(): Promise<void> {
@@ -409,15 +405,6 @@ export class WorldMapPageComponent implements AfterViewInit, OnDestroy {
     }
 
     return bounds;
-  }
-
-  private stopLocationTracking(): void {
-    if (this.geolocationWatchId !== null) {
-      navigator.geolocation.clearWatch(this.geolocationWatchId);
-      this.geolocationWatchId = null;
-    }
-    this.$isTrackingLocation.set(false);
-    this.$userLocation.set(null);
   }
 
   private clearSavedData(): void {

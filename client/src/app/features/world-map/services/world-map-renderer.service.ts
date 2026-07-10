@@ -11,6 +11,7 @@ import {
 import type { GameQuestion } from '../models/radar-question.model';
 import { isAreaQuestion, isRadarQuestion, isThermometerQuestion } from '../models/radar-question.model';
 import { buildOutsideMask, intersectGeometry, subtractGeometry } from '../utils/map-mask.util';
+import type { UserLocation } from './user-location.service';
 import {
   createCirclePolygon,
   createAreaPolygon,
@@ -38,7 +39,9 @@ export class WorldMapRendererService {
   private allCountriesLayer?: L.GeoJSON;
   private activeCountryLayer?: L.LayerGroup;
   private questionLayer?: L.LayerGroup;
-  private userLocationLayer?: L.Marker;
+  private userLocationLayer?: L.LayerGroup;
+  private userLocationMarker?: L.Marker;
+  private userLocationAccuracyCircle?: L.Circle;
 
   initializeMap(container: HTMLElement): void {
     if (this.map) {
@@ -65,10 +68,54 @@ export class WorldMapRendererService {
   destroyMap(): void {
     this.map?.remove();
     this.map = undefined;
+    this.userLocationLayer = undefined;
+    this.userLocationMarker = undefined;
+    this.userLocationAccuracyCircle = undefined;
   }
 
   invalidateSize(): void {
     this.map?.invalidateSize();
+  }
+
+  showUserLocation(position: UserLocation): void {
+    if (!this.map) {
+      return;
+    }
+
+    const latLng = L.latLng(position.lat, position.lng);
+    if (this.userLocationMarker && this.userLocationAccuracyCircle) {
+      this.userLocationMarker.setLatLng(latLng);
+      this.userLocationAccuracyCircle.setLatLng(latLng).setRadius(position.accuracyMeters);
+      return;
+    }
+
+    this.userLocationAccuracyCircle = L.circle(latLng, {
+      radius: position.accuracyMeters,
+      color: '#1769aa',
+      weight: 1,
+      opacity: 0.55,
+      fillColor: '#4da3e2',
+      fillOpacity: 0.12,
+      interactive: false,
+    });
+    this.userLocationMarker = L.marker(latLng, {
+      interactive: false,
+      zIndexOffset: 1000,
+      icon: createUserLocationIcon(),
+    });
+    this.userLocationLayer = L.layerGroup([
+      this.userLocationAccuracyCircle,
+      this.userLocationMarker,
+    ]).addTo(this.map);
+  }
+
+  clearUserLocation(): void {
+    if (this.map && this.userLocationLayer) {
+      this.userLocationLayer.removeFrom(this.map);
+    }
+    this.userLocationLayer = undefined;
+    this.userLocationMarker = undefined;
+    this.userLocationAccuracyCircle = undefined;
   }
 
   renderMapState(
@@ -596,4 +643,13 @@ export class WorldMapRendererService {
 
     return bounds;
   }
+}
+
+function createUserLocationIcon(): L.DivIcon {
+  return L.divIcon({
+    className: 'user-location-marker',
+    iconSize: [24, 24],
+    iconAnchor: [12, 12],
+    html: '<span class="user-location-marker__pulse"></span><span class="user-location-marker__dot"></span>',
+  });
 }
