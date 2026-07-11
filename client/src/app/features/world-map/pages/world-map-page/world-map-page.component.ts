@@ -3,6 +3,7 @@ import {
   ChangeDetectionStrategy,
   Component,
   ElementRef,
+  NgZone,
   computed,
   effect,
   inject,
@@ -66,6 +67,7 @@ export class WorldMapPageComponent implements AfterViewInit, OnDestroy {
   private readonly worldMapRendererService = inject(WorldMapRendererService);
   private readonly modalService = inject(NzModalService);
   private readonly userLocationService = inject(UserLocationService);
+  private readonly ngZone = inject(NgZone);
 
   protected readonly $isSidebarExpanded = signal(true);
   protected readonly $isSheetDragging = signal(false);
@@ -129,6 +131,10 @@ export class WorldMapPageComponent implements AfterViewInit, OnDestroy {
     this.syncSidebarExpansion(event.matches);
   };
 
+  private readonly onNativeMapPointerMove = (event: PointerEvent): void => {
+    this.onMapPointerMove(event);
+  };
+
   private readonly syncRenderEffect = effect(() => {
     this.$questions();
     this.$selectedCountryCode();
@@ -147,6 +153,7 @@ export class WorldMapPageComponent implements AfterViewInit, OnDestroy {
   async ngAfterViewInit(): Promise<void> {
     this.initializeResponsiveSidebar();
     this.initializeMap();
+    this.initializePointerMoveListener();
     await this.countryBoundaryService.loadCountries();
     await this.worldMapStateService.restoreSelectedCountry();
     this.triggerRender(true);
@@ -157,6 +164,7 @@ export class WorldMapPageComponent implements AfterViewInit, OnDestroy {
     void this.syncUserLocationEffect;
     this.userLocationService.stop();
     this.detachResponsiveSidebarListener();
+    this.detachPointerMoveListener();
     this.clearLongPressTimer();
     if (this.shareLabelTimer) {
       clearTimeout(this.shareLabelTimer);
@@ -473,6 +481,24 @@ export class WorldMapPageComponent implements AfterViewInit, OnDestroy {
 
     this.worldMapRendererService.initializeMap(this.mapContainer.nativeElement);
     requestAnimationFrame(() => this.worldMapRendererService.invalidateSize());
+  }
+
+  private initializePointerMoveListener(): void {
+    const mapElement = this.mapContainer?.nativeElement;
+    if (!mapElement) {
+      return;
+    }
+
+    this.ngZone.runOutsideAngular(() => {
+      mapElement.addEventListener('pointermove', this.onNativeMapPointerMove, { passive: true });
+    });
+  }
+
+  private detachPointerMoveListener(): void {
+    this.mapContainer?.nativeElement.removeEventListener(
+      'pointermove',
+      this.onNativeMapPointerMove,
+    );
   }
 
   private triggerRender(shouldFitMap: boolean): void {
