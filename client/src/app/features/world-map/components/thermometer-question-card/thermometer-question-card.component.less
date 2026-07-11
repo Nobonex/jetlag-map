@@ -6,10 +6,15 @@
   display: flex;
   flex-direction: column;
   gap: 8px;
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
 }
 
 .question-field-label {
-  color: #506778;
+  color: var(--ink-muted);
+  font-family: var(--font-label);
   font-size: 0.88rem;
   font-weight: 600;
 }
@@ -21,7 +26,7 @@
 
 .question-lock-note {
   margin: 0;
-  color: #6e7f8d;
+  color: var(--ink-muted);
   font-size: 0.84rem;
   line-height: 1.45;
 }

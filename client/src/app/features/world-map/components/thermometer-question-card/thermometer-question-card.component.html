@@ -7,8 +7,8 @@
   (deleteRequest)="onDeleteRequest($event)"
   (titleChange)="onTitleChange($event)"
 >
-  <div class="question-field">
-    <span class="question-field-label">Direction</span>
+  <fieldset class="question-field">
+    <legend class="question-field-label">Direction</legend>
     <div class="thermometer-buttons">
       <button
         type="button"
@@ -29,11 +29,9 @@
         Colder
       </button>
     </div>
-  </div>
+  </fieldset>
 
   @if (question.isLocked) {
-    <p class="question-lock-note">
-      Locked: inputs are disabled and the markers cannot be moved.
-    </p>
+    <p class="question-lock-note">Locked: inputs are disabled and the markers cannot be moved.</p>
   }
 </app-question-card>

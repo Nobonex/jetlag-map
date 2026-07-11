@@ -7,8 +7,8 @@
   (deleteRequest)="onDeleteRequest($event)"
   (titleChange)="onTitleChange($event)"
 >
-  <div class="question-field">
-    <span class="question-field-label">Answer</span>
+  <fieldset class="question-field">
+    <legend class="question-field-label">Answer</legend>
     <nz-radio-group
       [ngModel]="question.draft.mode"
       (ngModelChange)="onDraftModeChange($event)"
@@ -17,10 +17,10 @@
       <label nz-radio-button nzValue="inside">Inside</label>
       <label nz-radio-button nzValue="outside">Outside</label>
     </nz-radio-group>
-  </div>
+  </fieldset>
 
-  <div class="question-field">
-    <span class="question-field-label">Radius</span>
+  <fieldset class="question-field">
+    <legend class="question-field-label">Radius</legend>
     <div class="question-size-row">
       <nz-input-number
         class="question-size-input"
@@ -33,7 +33,7 @@
       ></nz-input-number>
       <span class="question-field-unit">km</span>
     </div>
-  </div>
+  </fieldset>
 
   @if (isDirty()) {
     <div class="question-apply-row">
@@ -51,8 +51,6 @@
   }
 
   @if (question.isLocked) {
-    <p class="question-lock-note">
-      Locked: inputs are disabled and the marker cannot be moved.
-    </p>
+    <p class="question-lock-note">Locked: inputs are disabled and the marker cannot be moved.</p>
   }
 </app-question-card>

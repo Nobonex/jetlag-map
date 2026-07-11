@@ -1,40 +1,63 @@
 :host {
   display: flex;
   flex-direction: column;
-  gap: 18px;
+  gap: 14px;
 }
 
 .sidebar-heading {
-  min-width: 0;
-  padding: 0 2px;
+  display: flex;
+  align-items: end;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 0 3px 9px;
+  border-bottom: 1px solid var(--paper-border);
+}
+
+.sidebar-kicker,
+.sidebar-title {
+  display: block;
 }
 
 .sidebar-kicker {
-  display: inline-block;
-  margin-bottom: 8px;
-  font-size: 11px;
-  font-weight: 700;
-  letter-spacing: 0.12em;
+  color: var(--signal-red);
+  font-family: var(--font-label);
+  font-size: 0.68rem;
+  font-weight: 900;
+  letter-spacing: 0.15em;
   text-transform: uppercase;
-  color: #658095;
 }
 
 .sidebar-title {
-  margin: 0 0 8px;
-  color: #163348;
-  font-size: 1.15rem;
-  line-height: 1.2;
+  margin: 3px 0 0;
+  color: var(--ink);
+  font-family: var(--font-display);
+  font-size: 1.26rem;
+  line-height: 1.1;
+}
+
+.question-count {
+  display: grid;
+  place-items: center;
+  min-width: 34px;
+  height: 34px;
+  border: 1px solid var(--ink);
+  border-radius: 50%;
+  color: var(--ink);
+  font-family: var(--font-label);
+  font-size: 0.8rem;
+  font-weight: 900;
+  transform: rotate(4deg);
 }
 
 .sidebar-section {
-  padding: 16px;
-  border-radius: 16px;
-  background: fade(#ffffff, 72%);
-  border: 1px solid fade(#27475f, 10%);
+  padding: 18px;
+  color: var(--ink-muted);
+  background: var(--paper);
+  border: 1px dashed var(--paper-border-strong);
+  border-radius: 8px;
 }
 
 .sidebar-copy {
   margin: 0;
-  color: #54697a;
-  line-height: 1.5;
+  line-height: 1.55;
 }

@@ -1,5 +1,11 @@
 <div class="sidebar-heading">
-  <span class="sidebar-kicker">Questions</span>
+  <div>
+    <span class="sidebar-kicker">Field notes</span>
+    <h2 class="sidebar-title">Active questions</h2>
+  </div>
+  <span class="question-count" [attr.aria-label]="questions.length + ' active questions'">
+    {{ questions.length }}
+  </span>
 </div>
 
 @if (questions.length > 0) {
@@ -31,7 +37,7 @@
 } @else {
   <div class="sidebar-section">
     <p class="sidebar-copy">
-      No questions added yet. Use the map context menu to add one.
+      No questions yet. Use Add question on the map, right-click, or long-press to begin.
     </p>
   </div>
 }

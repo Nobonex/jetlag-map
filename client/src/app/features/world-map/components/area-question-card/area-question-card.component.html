@@ -9,13 +9,13 @@
 >
   @if (!question.isClosed) {
     <p class="area-drawing-note">
-      Drawing: click the map to add points. After adding at least three, click point 1 to close
-      the area.
+      Drawing: click the map to add points. After adding at least three, click point 1 to close the
+      area.
     </p>
     <span class="area-point-count">{{ question.vertices.length }} points placed</span>
   } @else {
-    <div class="question-field">
-      <span class="question-field-label">Answer</span>
+    <fieldset class="question-field">
+      <legend class="question-field-label">Answer</legend>
       <nz-radio-group
         [ngModel]="question.applied.mode"
         (ngModelChange)="onModeChange($event)"
@@ -24,7 +24,7 @@
         <label nz-radio-button nzValue="inside">Inside</label>
         <label nz-radio-button nzValue="outside">Outside</label>
       </nz-radio-group>
-    </div>
+    </fieldset>
   }
 
   @if (question.isLocked) {

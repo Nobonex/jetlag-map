@@ -28,8 +28,8 @@ import { QuestionsSidebarComponent } from '../../components/questions-sidebar/qu
 import { isAreaQuestion } from '../../models/radar-question.model';
 import { UserLocationService } from '../../services/user-location.service';
 
-const CONTEXT_MENU_WIDTH = 220;
-const CONTEXT_MENU_HEIGHT = 130;
+const CONTEXT_MENU_WIDTH = 300;
+const CONTEXT_MENU_HEIGHT = 250;
 const CONTEXT_MENU_MARGIN = 12;
 const LONG_PRESS_DURATION_MS = 550;
 const LONG_PRESS_MOVE_THRESHOLD_PX = 10;
@@ -67,6 +67,8 @@ export class WorldMapPageComponent implements AfterViewInit, OnDestroy {
   private readonly userLocationService = inject(UserLocationService);
 
   protected readonly $isSidebarExpanded = signal(true);
+  protected readonly $isSheetDragging = signal(false);
+  protected readonly $sheetDragTransform = signal<string | null>(null);
   protected readonly $shareButtonLabel = signal('Share');
   protected readonly $contextMenuPosition = signal<ContextMenuPosition | null>(null);
   protected readonly $selectedCountryCode = this.worldMapStateService.$selectedCountryCode;
@@ -85,8 +87,16 @@ export class WorldMapPageComponent implements AfterViewInit, OnDestroy {
     () => this.$questions().length > 0 || this.$selectedCountryCode() !== null,
   );
   protected readonly $drawingAreaQuestionId = computed(
-    () => this.$questions().find((question) => isAreaQuestion(question) && !question.isClosed)?.id ?? null,
+    () =>
+      this.$questions().find((question) => isAreaQuestion(question) && !question.isClosed)?.id ??
+      null,
   );
+  protected readonly $drawingAreaPointCount = computed(() => {
+    const question = this.$questions().find(
+      (candidate) => isAreaQuestion(candidate) && !candidate.isClosed,
+    );
+    return question && isAreaQuestion(question) ? question.vertices.length : 0;
+  });
 
   @ViewChild('mapContainer', { static: true })
   private readonly mapContainer?: ElementRef<HTMLDivElement>;
@@ -106,6 +116,11 @@ export class WorldMapPageComponent implements AfterViewInit, OnDestroy {
   private longPressSuppressUntil = 0;
   private contextMenuLatLng: L.LatLng | null = null;
   private shareLabelTimer: ReturnType<typeof setTimeout> | null = null;
+  private sheetDragStartY: number | null = null;
+  private sheetDragStartOffset = 0;
+  private sheetDragMaxOffset = 0;
+  private sheetDidDrag = false;
+  private suppressNextSheetClick = false;
 
   private readonly onMobileSidebarQueryChange = (event: MediaQueryListEvent): void => {
     this.syncSidebarExpansion(event.matches);
@@ -180,6 +195,67 @@ export class WorldMapPageComponent implements AfterViewInit, OnDestroy {
     requestAnimationFrame(() => this.worldMapRendererService.invalidateSize());
   }
 
+  protected onSheetToggle(): void {
+    if (this.suppressNextSheetClick) {
+      this.suppressNextSheetClick = false;
+      return;
+    }
+    this.toggleSidebar();
+  }
+
+  protected onSheetPointerDown(event: PointerEvent): void {
+    if (!this.mobileSidebarQuery?.matches || event.button !== 0) {
+      return;
+    }
+
+    const target = event.currentTarget;
+    if (!(target instanceof HTMLElement) || !target.parentElement) {
+      return;
+    }
+    const sheet = target.parentElement;
+
+    this.sheetDragStartY = event.clientY;
+    this.sheetDragMaxOffset = Math.max(0, sheet.getBoundingClientRect().height - 58);
+    this.sheetDragStartOffset = this.$isSidebarExpanded() ? 0 : this.sheetDragMaxOffset;
+    this.sheetDidDrag = false;
+    this.$isSheetDragging.set(true);
+    target.setPointerCapture(event.pointerId);
+  }
+
+  protected onSheetPointerMove(event: PointerEvent): void {
+    if (this.sheetDragStartY === null) {
+      return;
+    }
+
+    const distance = event.clientY - this.sheetDragStartY;
+    if (Math.abs(distance) > 6) {
+      this.sheetDidDrag = true;
+      this.suppressNextSheetClick = true;
+    }
+    const offset = Math.min(
+      Math.max(this.sheetDragStartOffset + distance, 0),
+      this.sheetDragMaxOffset,
+    );
+    this.$sheetDragTransform.set(`translateY(${offset}px)`);
+  }
+
+  protected onSheetPointerUp(): void {
+    if (this.sheetDragStartY === null) {
+      return;
+    }
+
+    if (this.sheetDidDrag) {
+      const transform = this.$sheetDragTransform();
+      const offset = transform ? Number.parseFloat(transform.replace(/[^\d.]/g, '')) : 0;
+      this.$isSidebarExpanded.set(offset < this.sheetDragMaxOffset / 2);
+    }
+    this.sheetDragStartY = null;
+    this.sheetDidDrag = false;
+    this.$isSheetDragging.set(false);
+    this.$sheetDragTransform.set(null);
+    requestAnimationFrame(() => this.worldMapRendererService.invalidateSize());
+  }
+
   protected onMapContextMenu(event: MouseEvent): void {
     event.preventDefault();
 
@@ -214,7 +290,10 @@ export class WorldMapPageComponent implements AfterViewInit, OnDestroy {
     }
 
     const target = event.target;
-    if (target instanceof Element && target.closest('.leaflet-marker-icon, .leaflet-marker-shadow')) {
+    if (
+      target instanceof Element &&
+      target.closest('.leaflet-marker-icon, .leaflet-marker-shadow')
+    ) {
       return;
     }
 
@@ -309,6 +388,30 @@ export class WorldMapPageComponent implements AfterViewInit, OnDestroy {
 
     this.questionsService.addAreaQuestion({ lat: start.lat, lng: start.lng });
     this.closeContextMenu();
+  }
+
+  protected openQuestionPicker(): void {
+    const map = this.worldMapRendererService.getMap();
+    if (!map) {
+      return;
+    }
+
+    this.contextMenuLatLng = map.getCenter();
+    this.$contextMenuPosition.set({ x: 18, y: 18 });
+  }
+
+  protected finishAreaDrawing(): void {
+    const questionId = this.$drawingAreaQuestionId();
+    if (questionId && this.$drawingAreaPointCount() >= 3) {
+      this.questionsService.closeAreaQuestion(questionId);
+    }
+  }
+
+  protected cancelAreaDrawing(): void {
+    const questionId = this.$drawingAreaQuestionId();
+    if (questionId) {
+      this.questionsService.deleteQuestion(questionId);
+    }
   }
 
   protected confirmClearQuestions(): void {

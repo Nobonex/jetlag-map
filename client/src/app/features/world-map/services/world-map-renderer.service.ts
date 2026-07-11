@@ -152,7 +152,7 @@ export class WorldMapRendererService {
       if (worldFeatureCollection.features.length > 0) {
         this.allCountriesLayer = L.geoJSON(worldFeatureCollection, {
           style: () => ({
-            color: '#4f6578',
+            color: '#50665d',
             weight: 0.7,
             opacity: 0.28,
             fill: false,
@@ -171,8 +171,8 @@ export class WorldMapRendererService {
     this.allCountriesLayer = L.geoJSON(buildOutsideMask(activeCountryGeometry), {
       style: () => ({
         stroke: false,
-        fillColor: '#d2dae1',
-        fillOpacity: 0.68,
+        fillColor: '#b9b6aa',
+        fillOpacity: 0.64,
         fillRule: 'evenodd',
       }),
       interactive: false,
@@ -181,7 +181,7 @@ export class WorldMapRendererService {
 
     const activeOutlineLayer = L.geoJSON(activeCountryGeometry, {
       style: () => ({
-        color: '#19364d',
+        color: '#183a33',
         weight: 2.2,
         opacity: 0.96,
         fill: false,
@@ -245,8 +245,8 @@ export class WorldMapRendererService {
             L.geoJSON(mask, {
               style: () => ({
                 stroke: false,
-                fillColor: '#d2dae1',
-                fillOpacity: 0.68,
+                fillColor: '#b9b6aa',
+                fillOpacity: 0.64,
               }),
               interactive: false,
               smoothFactor: MAP_PATH_SMOOTH_FACTOR,

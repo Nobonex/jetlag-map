@@ -1,7 +1,13 @@
 <nz-layout class="app-shell">
   <nz-header #appHeader class="app-header">
     <div class="header-primary">
-      <span class="app-brand" nz-typography>JetLag</span>
+      <div class="brand-lockup">
+        <img class="brand-mark" src="favicon.svg" alt="" aria-hidden="true" />
+        <div class="brand-copy">
+          <span class="app-brand">JetLag</span>
+          <span class="brand-subtitle">Field map</span>
+        </div>
+      </div>
       <button type="button" class="share-button" nz-button nzShape="round" (click)="shareState()">
         {{ $shareButtonLabel() }}
       </button>
@@ -20,6 +26,7 @@
     </div>
 
     <label class="selector-block">
+      <span class="selector-label">Game area</span>
       <nz-select
         class="country-select"
         [ngModel]="$selectedCountryCode()"
@@ -42,9 +49,26 @@
       #questionSidebar
       class="question-sidebar"
       [class.is-collapsed]="!$isSidebarExpanded()"
+      [class.is-dragging]="$isSheetDragging()"
+      [style.transform]="$sheetDragTransform()"
       [attr.tabindex]="$isSidebarExpanded() ? 0 : -1"
       aria-label="JetLag questions sidebar"
     >
+      <button
+        type="button"
+        class="mobile-sheet-toggle"
+        (click)="onSheetToggle()"
+        (pointerdown)="onSheetPointerDown($event)"
+        (pointermove)="onSheetPointerMove($event)"
+        (pointerup)="onSheetPointerUp()"
+        (pointercancel)="onSheetPointerUp()"
+        [attr.aria-expanded]="$isSidebarExpanded()"
+        aria-controls="question-sidebar-content"
+      >
+        <span class="sheet-grip" aria-hidden="true"></span>
+        <span>Questions</span>
+        <span class="sheet-count">{{ $questions().length }}</span>
+      </button>
       <div
         id="question-sidebar-content"
         class="sidebar-content"
@@ -68,32 +92,61 @@
         (pointerleave)="onMapPointerUp()"
       ></div>
 
-      <button
-        type="button"
-        class="map-options-trigger"
-        nz-button
-        nzShape="round"
-        nz-dropdown
-        [nzDropdownMenu]="optionsMenu"
-        nzPlacement="topLeft"
-      >
-        Options
-      </button>
+      <div class="map-actions">
+        <button
+          type="button"
+          class="add-question-trigger"
+          nz-button
+          (click)="openQuestionPicker()"
+        >
+          <span class="add-question-plus" aria-hidden="true">+</span>
+          Add question
+        </button>
+
+        <button
+          type="button"
+          class="map-options-trigger"
+          nz-button
+          nzShape="round"
+          nz-dropdown
+          [nzDropdownMenu]="optionsMenu"
+          nzPlacement="topLeft"
+        >
+          Options
+        </button>
+      </div>
+
+      @if ($drawingAreaQuestionId()) {
+        <div class="drawing-banner" role="status" aria-live="polite">
+          <div>
+            <span class="drawing-kicker">Survey in progress</span>
+            <strong>{{ $drawingAreaPointCount() }} points placed</strong>
+          </div>
+          <span class="drawing-hint">Tap the map to add points, or point 1 to close.</span>
+          <div class="drawing-actions">
+            <button type="button" nz-button nzSize="small" (click)="cancelAreaDrawing()">
+              Cancel
+            </button>
+            <button
+              type="button"
+              nz-button
+              nzType="primary"
+              nzSize="small"
+              [disabled]="$drawingAreaPointCount() < 3"
+              (click)="finishAreaDrawing()"
+            >
+              Finish area
+            </button>
+          </div>
+        </div>
+      }
 
       <nz-dropdown-menu #optionsMenu="nzDropdownMenu">
         <ul nz-menu>
-          <li
-            nz-menu-item
-            [nzDisabled]="!isLocationSupported"
-            (click)="toggleUserLocation()"
-          >
+          <li nz-menu-item [nzDisabled]="!isLocationSupported" (click)="toggleUserLocation()">
             {{ $locationMenuLabel() }}
           </li>
-          <li
-            nz-menu-item
-            [nzDisabled]="!$canClearSavedData()"
-            (click)="confirmClearQuestions()"
-          >
+          <li nz-menu-item [nzDisabled]="!$canClearSavedData()" (click)="confirmClearQuestions()">
             Clear saved data
           </li>
         </ul>
@@ -116,6 +169,10 @@
           role="menu"
           aria-label="Map context menu"
         >
+          <div class="question-picker-heading">
+            <span class="question-picker-kicker">New field note</span>
+            <strong>Choose a question</strong>
+          </div>
           <button
             type="button"
             class="map-context-menu-action"
@@ -123,7 +180,8 @@
             nzType="text"
             (click)="addRadarQuestion()"
           >
-            Radar
+            <span class="picker-icon" aria-hidden="true">R</span>
+            <span><strong>Radar</strong><small>Measure a radius</small></span>
           </button>
           <button
             type="button"
@@ -132,7 +190,8 @@
             nzType="text"
             (click)="addThermometerQuestion()"
           >
-            Thermometer
+            <span class="picker-icon" aria-hidden="true">T</span>
+            <span><strong>Thermometer</strong><small>Choose warmer or colder</small></span>
           </button>
           <button
             type="button"
@@ -142,7 +201,11 @@
             [disabled]="$drawingAreaQuestionId() !== null"
             (click)="addAreaQuestion()"
           >
-            {{ $drawingAreaQuestionId() ? 'Finish current area first' : 'Draw area' }}
+            <span class="picker-icon" aria-hidden="true">A</span>
+            <span>
+              <strong>{{ $drawingAreaQuestionId() ? 'Area in progress' : 'Draw area' }}</strong>
+              <small>Mark a custom boundary</small>
+            </span>
           </button>
         </nz-card>
       }

@@ -73,6 +73,8 @@ describe('WorldMapPageComponent', () => {
 
     expect(compiled.querySelector('.app-brand')?.textContent).toContain('JetLag');
     expect(compiled.querySelector('nz-select')).not.toBeNull();
+    expect(compiled.querySelector('.add-question-trigger')?.textContent).toContain('Add question');
+    expect(compiled.querySelector('.mobile-sheet-toggle')).not.toBeNull();
     expect(compiled.querySelector('.share-button')?.textContent).toContain('Share');
     expect(compiled.querySelector('.question-sidebar')?.getAttribute('tabindex')).toBe('0');
   });

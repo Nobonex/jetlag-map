@@ -1,13 +1,21 @@
-<div class="sidebar-section question-card">
+<div class="sidebar-section question-card" [style.--question-color]="question.color">
   <div class="question-card-header">
     <div class="question-card-meta">
-      <span
-        class="question-color-swatch"
-        [style.background]="question.color"
-        aria-hidden="true"
-      ></span>
+      <span class="question-type-mark" aria-hidden="true">
+        @switch (question.type) {
+          @case ('radar') {
+            R
+          }
+          @case ('thermometer') {
+            T
+          }
+          @case ('area') {
+            A
+          }
+        }
+      </span>
       <div class="question-card-meta-content">
-        <span class="sidebar-label">{{ typeLabel }} {{ index + 1 }}</span>
+        <span class="sidebar-label">{{ typeLabel }} / {{ index + 1 }}</span>
       </div>
     </div>
     <div class="question-card-actions">
@@ -17,8 +25,11 @@
         nzSize="small"
         nzType="text"
         (click)="onToggleCollapsed()"
+        [attr.aria-expanded]="!question.isCollapsed"
+        [attr.aria-label]="question.isCollapsed ? 'Expand question' : 'Collapse question'"
+        title="{{ question.isCollapsed ? 'Expand' : 'Collapse' }}"
       >
-        {{ question.isCollapsed ? 'Expand' : 'Collapse' }}
+        {{ question.isCollapsed ? '+' : '-' }}
       </button>
       <button
         type="button"
@@ -26,8 +37,11 @@
         nzSize="small"
         [nzType]="question.isLocked ? 'default' : 'text'"
         (click)="onToggleLocked()"
+        [attr.aria-pressed]="question.isLocked"
+        [attr.aria-label]="question.isLocked ? 'Unlock question' : 'Lock question'"
+        title="{{ question.isLocked ? 'Unlock' : 'Lock' }}"
       >
-        {{ question.isLocked ? 'Unlock' : 'Lock' }}
+        {{ question.isLocked ? 'Locked' : 'Lock' }}
       </button>
       @if (!question.isLocked) {
         <button
@@ -38,6 +52,7 @@
           nzDanger
           (click)="onDelete()"
           title="Delete question"
+          aria-label="Delete question"
         >
           <span nz-icon nzType="delete"></span>
         </button>
@@ -52,6 +67,7 @@
       [(ngModel)]="draftTitle"
       (blur)="onTitleBlur()"
       (keydown)="onTitleKeydown($event)"
+      aria-label="Question name"
     />
   } @else {
     <div class="question-card-title-row">
@@ -65,6 +81,7 @@
           nzType="text"
           (click)="startTitleEdit()"
           title="Edit name"
+          aria-label="Edit question name"
         >
           <span nz-icon nzType="edit"></span>
         </button>
