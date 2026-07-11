@@ -179,4 +179,32 @@ describe('WorldMapPageComponent', () => {
     expect(fixture.componentInstance['$drawingAreaQuestionId']()).toBeNull();
     expect(fixture.nativeElement.querySelector('app-area-question-card')).not.toBeNull();
   });
+
+  it('should not open the question picker after a touch map gesture', () => {
+    vi.useFakeTimers();
+    const fixture = TestBed.createComponent(WorldMapPageComponent);
+    const component = fixture.componentInstance;
+    vi.spyOn(component as any, 'initializeMap').mockImplementation(() => {});
+    const openContextMenu = vi.spyOn(component as any, 'openContextMenu');
+
+    component['onMapPointerDown']({
+      pointerType: 'touch',
+      pointerId: 1,
+      button: 0,
+      clientX: 100,
+      clientY: 100,
+      timeStamp: 100,
+      target: null,
+    } as PointerEvent);
+    component['onMapPointerMove']({
+      pointerId: 1,
+      clientX: 125,
+      clientY: 100,
+      timeStamp: 120,
+    } as PointerEvent);
+    vi.advanceTimersByTime(600);
+
+    expect(openContextMenu).not.toHaveBeenCalled();
+    vi.useRealTimers();
+  });
 });

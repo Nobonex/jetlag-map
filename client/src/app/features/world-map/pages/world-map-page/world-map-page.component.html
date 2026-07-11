@@ -87,9 +87,9 @@
         (click)="onMapClick($event)"
         (pointerdown)="onMapPointerDown($event)"
         (pointermove)="onMapPointerMove($event)"
-        (pointerup)="onMapPointerUp()"
-        (pointercancel)="onMapPointerUp()"
-        (pointerleave)="onMapPointerUp()"
+        (pointerup)="onMapPointerUp($event)"
+        (pointercancel)="onMapPointerUp($event)"
+        (pointerleave)="onMapPointerUp($event)"
       ></div>
 
       <div class="map-actions">

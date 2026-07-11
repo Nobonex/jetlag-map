@@ -34,6 +34,7 @@ const CONTEXT_MENU_MARGIN = 12;
 const LONG_PRESS_DURATION_MS = 550;
 const LONG_PRESS_MOVE_THRESHOLD_PX = 10;
 const LONG_PRESS_CONTEXT_MENU_SUPPRESS_MS = 800;
+const TOUCH_GESTURE_CONTEXT_MENU_SUPPRESS_MS = 1200;
 
 @Component({
   selector: 'app-world-map-page',
@@ -114,6 +115,8 @@ export class WorldMapPageComponent implements AfterViewInit, OnDestroy {
   private longPressTimer: ReturnType<typeof setTimeout> | null = null;
   private longPressStartPoint: ScreenPoint | null = null;
   private longPressSuppressUntil = 0;
+  private touchGestureSuppressUntil = 0;
+  private readonly activeMapPointerIds = new Set<number>();
   private contextMenuLatLng: L.LatLng | null = null;
   private shareLabelTimer: ReturnType<typeof setTimeout> | null = null;
   private sheetDragStartY: number | null = null;
@@ -259,7 +262,10 @@ export class WorldMapPageComponent implements AfterViewInit, OnDestroy {
   protected onMapContextMenu(event: MouseEvent): void {
     event.preventDefault();
 
-    if (event.timeStamp < this.longPressSuppressUntil) {
+    if (
+      event.timeStamp < this.longPressSuppressUntil ||
+      event.timeStamp < this.touchGestureSuppressUntil
+    ) {
       return;
     }
 
@@ -289,6 +295,13 @@ export class WorldMapPageComponent implements AfterViewInit, OnDestroy {
       return;
     }
 
+    this.activeMapPointerIds.add(event.pointerId);
+    if (this.activeMapPointerIds.size > 1) {
+      this.suppressTouchGestureContextMenu(event.timeStamp);
+      this.clearLongPressTimer();
+      return;
+    }
+
     const target = event.target;
     if (
       target instanceof Element &&
@@ -297,8 +310,8 @@ export class WorldMapPageComponent implements AfterViewInit, OnDestroy {
       return;
     }
 
-    this.longPressStartPoint = { x: event.clientX, y: event.clientY };
     this.clearLongPressTimer();
+    this.longPressStartPoint = { x: event.clientX, y: event.clientY };
     this.longPressTimer = setTimeout(() => {
       this.longPressSuppressUntil = event.timeStamp + LONG_PRESS_CONTEXT_MENU_SUPPRESS_MS;
       const latLng = this.worldMapRendererService.mouseEventToLatLng(event);
@@ -320,11 +333,13 @@ export class WorldMapPageComponent implements AfterViewInit, OnDestroy {
     );
 
     if (movedDistance > LONG_PRESS_MOVE_THRESHOLD_PX) {
+      this.suppressTouchGestureContextMenu(event.timeStamp);
       this.clearLongPressTimer();
     }
   }
 
-  protected onMapPointerUp(): void {
+  protected onMapPointerUp(event: PointerEvent): void {
+    this.activeMapPointerIds.delete(event.pointerId);
     this.clearLongPressTimer();
   }
 
@@ -559,11 +574,18 @@ export class WorldMapPageComponent implements AfterViewInit, OnDestroy {
   }
 
   private clearLongPressTimer(): void {
-    if (this.longPressTimer) {
+    if (this.longPressTimer !== null) {
       clearTimeout(this.longPressTimer);
       this.longPressTimer = null;
     }
     this.longPressStartPoint = null;
+  }
+
+  private suppressTouchGestureContextMenu(eventTimeStamp: number): void {
+    this.touchGestureSuppressUntil = Math.max(
+      this.touchGestureSuppressUntil,
+      eventTimeStamp + TOUCH_GESTURE_CONTEXT_MENU_SUPPRESS_MS,
+    );
   }
 }
 
