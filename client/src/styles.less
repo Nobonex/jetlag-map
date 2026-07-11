@@ -43,6 +43,108 @@ textarea {
   font: inherit;
 }
 
+.ant-modal-mask {
+  background: fade(#102b25, 48%);
+  backdrop-filter: blur(3px);
+}
+
+.ant-modal-confirm .ant-modal-content {
+  overflow: hidden;
+  padding: 0;
+  background: var(--paper);
+  border: 1px solid var(--paper-border-strong);
+  border-top: 5px solid var(--signal-red);
+  border-radius: 10px;
+  box-shadow: var(--shadow-float);
+}
+
+.ant-modal-confirm .ant-modal-body {
+  padding: 24px 24px 20px;
+}
+
+.ant-modal-confirm .ant-modal-confirm-title {
+  color: var(--ink);
+  font-family: var(--font-display);
+  font-size: 1.25rem;
+  font-weight: 800;
+  line-height: 1.25;
+}
+
+.ant-modal-confirm .ant-modal-confirm-content {
+  margin-top: 8px;
+  color: var(--ink-muted);
+  line-height: 1.55;
+}
+
+.ant-modal-confirm .ant-modal-confirm-btns {
+  display: flex;
+  justify-content: flex-end;
+  gap: 9px;
+  margin-top: 22px;
+}
+
+.ant-modal-confirm .ant-modal-confirm-btns .ant-btn {
+  min-height: 38px;
+  margin: 0;
+  padding-inline: 16px;
+  color: var(--ink);
+  border-color: var(--paper-border-strong);
+  border-radius: 6px;
+  background: var(--paper-light);
+  box-shadow: none;
+  font-weight: 700;
+}
+
+.ant-modal-confirm .ant-modal-confirm-btns .ant-btn + .ant-btn {
+  margin-inline-start: 0;
+}
+
+.ant-modal-confirm .ant-modal-close {
+  display: none;
+}
+
+.ant-modal-confirm .ant-modal-confirm-btns .ant-btn:hover,
+.ant-modal-confirm .ant-modal-confirm-btns .ant-btn:focus-visible {
+  color: var(--customs-green);
+  border-color: var(--customs-green);
+}
+
+.ant-modal-confirm .ant-modal-confirm-btns .ant-btn-dangerous,
+.ant-modal-confirm .ant-modal-confirm-btns .ant-btn-dangerous:hover,
+.ant-modal-confirm .ant-modal-confirm-btns .ant-btn-dangerous:focus-visible {
+  color: #ffffff;
+  border-color: var(--signal-red);
+  background: var(--signal-red);
+}
+
+.ant-modal-confirm .ant-modal-confirm-warning,
+.ant-modal-confirm .ant-modal-confirm-error {
+  color: var(--signal-red);
+}
+
+@media (max-width: 520px) {
+  .ant-modal-confirm {
+    max-width: calc(100vw - 24px);
+    margin: 0 auto;
+  }
+
+  .ant-modal-confirm .ant-modal-body {
+    padding: 20px 18px 18px;
+  }
+
+  .ant-modal-confirm .ant-modal-confirm-btns {
+    flex-direction: column-reverse;
+    align-items: stretch;
+    width: 100%;
+  }
+
+  .ant-modal-confirm .ant-modal-confirm-btns .ant-btn {
+    width: 100%;
+    margin-inline: 0;
+  }
+
+}
+
 app-world-map-page {
   .map-context-menu .ant-card-body {
     padding: 12px 14px;
