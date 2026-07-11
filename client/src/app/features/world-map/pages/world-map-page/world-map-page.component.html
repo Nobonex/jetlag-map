@@ -100,7 +100,7 @@
           (click)="openQuestionPicker()"
         >
           <span class="add-question-plus" aria-hidden="true">+</span>
-          Add question
+          Add <span class="add-question-long-label">question</span>
         </button>
 
         <button
@@ -112,7 +112,8 @@
           [nzDropdownMenu]="optionsMenu"
           nzPlacement="topLeft"
         >
-          Options
+          <span class="options-label-desktop">Options</span>
+          <span class="options-label-mobile">Menu</span>
         </button>
       </div>
 

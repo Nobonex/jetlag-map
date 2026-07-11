@@ -189,6 +189,10 @@
   line-height: 1;
 }
 
+.options-label-mobile {
+  display: none;
+}
+
 .map-options-trigger {
   color: var(--ink) !important;
   border-color: var(--paper-border) !important;
@@ -443,6 +447,30 @@
     right: 12px;
     bottom: calc(74px + env(safe-area-inset-bottom));
     justify-content: space-between;
+    gap: 8px;
+  }
+
+  .add-question-trigger,
+  .map-options-trigger {
+    height: 38px;
+    padding-inline: 12px;
+    border-radius: 7px;
+    box-shadow: 0 7px 18px fade(#152a25, 20%);
+    font-size: 0.8rem;
+  }
+
+  .add-question-plus {
+    margin-right: 5px;
+    font-size: 1rem;
+  }
+
+  .add-question-long-label,
+  .options-label-desktop {
+    display: none;
+  }
+
+  .options-label-mobile {
+    display: inline;
   }
 
   .map-options-trigger {
