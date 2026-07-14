@@ -9,9 +9,14 @@ import {
   WORLD_MAP_MAX_SELECTION_ZOOM,
 } from '../constants/world-map.constants';
 import type { GameQuestion } from '../models/radar-question.model';
-import { isAreaQuestion, isRadarQuestion, isThermometerQuestion } from '../models/radar-question.model';
+import {
+  isAreaQuestion,
+  isRadarQuestion,
+  isThermometerQuestion,
+} from '../models/radar-question.model';
 import { buildOutsideMask, intersectGeometry, subtractGeometry } from '../utils/map-mask.util';
 import type { UserLocation } from './user-location.service';
+import type { RailwayStation } from '../models/railway-station.model';
 import {
   createCirclePolygon,
   createAreaPolygon,
@@ -29,6 +34,7 @@ import {
 
 const MAP_PATH_SMOOTH_FACTOR = 0.2;
 const MAX_RADAR_PLAYABLE_AREA_ZOOM = 9;
+const MIN_STATION_RADIUS_ZOOM = 7;
 type QuestionPoint = { lat: number; lng: number };
 type QuestionPointKind = 'center' | 'start' | 'end' | number;
 
@@ -41,6 +47,15 @@ export class WorldMapRendererService {
   private userLocationLayer?: L.LayerGroup;
   private userLocationMarker?: L.Marker;
   private userLocationAccuracyCircle?: L.Circle;
+  private stationRadiusLayer?: L.LayerGroup;
+  private stationRadiusRenderer?: L.Canvas;
+  private stationRadiusStations: RailwayStation[] = [];
+  private isStationRadiusListenerAttached = false;
+  private stationRadiusVisibilityChange?: (needsMoreZoom: boolean) => void;
+
+  private readonly onStationRadiusViewportChange = (): void => {
+    this.renderVisibleStationRadii();
+  };
 
   initializeMap(container: HTMLElement): void {
     if (this.map) {
@@ -62,14 +77,21 @@ export class WorldMapRendererService {
       maxZoom: 19,
       noWrap: true,
     }).addTo(this.map);
+
+    const stationPane = this.map.createPane('stationRadiusPane');
+    stationPane.style.zIndex = '425';
+    stationPane.style.pointerEvents = 'none';
+    this.stationRadiusRenderer = L.canvas({ pane: 'stationRadiusPane', padding: 0.5 });
   }
 
   destroyMap(): void {
+    this.clearStationRadii();
     this.map?.remove();
     this.map = undefined;
     this.userLocationLayer = undefined;
     this.userLocationMarker = undefined;
     this.userLocationAccuracyCircle = undefined;
+    this.stationRadiusRenderer = undefined;
   }
 
   invalidateSize(): void {
@@ -115,6 +137,34 @@ export class WorldMapRendererService {
     this.userLocationLayer = undefined;
     this.userLocationMarker = undefined;
     this.userLocationAccuracyCircle = undefined;
+  }
+
+  showStationRadii(
+    stations: RailwayStation[],
+    onVisibilityChange?: (needsMoreZoom: boolean) => void,
+  ): void {
+    if (!this.map) {
+      return;
+    }
+
+    this.stationRadiusStations = stations;
+    this.stationRadiusVisibilityChange = onVisibilityChange;
+    if (!this.isStationRadiusListenerAttached) {
+      this.map.on('moveend zoomend', this.onStationRadiusViewportChange);
+      this.isStationRadiusListenerAttached = true;
+    }
+    this.renderVisibleStationRadii();
+  }
+
+  clearStationRadii(): void {
+    if (this.map && this.isStationRadiusListenerAttached) {
+      this.map.off('moveend zoomend', this.onStationRadiusViewportChange);
+    }
+    this.stationRadiusLayer?.remove();
+    this.stationRadiusLayer = undefined;
+    this.stationRadiusStations = [];
+    this.stationRadiusVisibilityChange = undefined;
+    this.isStationRadiusListenerAttached = false;
   }
 
   renderMapState(
@@ -163,7 +213,11 @@ export class WorldMapRendererService {
 
       this.renderQuestionLayer(null, questions, null, onQuestionDragEnd, onAreaClose);
       if (shouldFitMap) {
-        this.fitBounds(this.getQuestionsBounds(questions) ?? WORLD_MAP_DEFAULT_BOUNDS, undefined, headerHeight);
+        this.fitBounds(
+          this.getQuestionsBounds(questions) ?? WORLD_MAP_DEFAULT_BOUNDS,
+          undefined,
+          headerHeight,
+        );
       }
       return;
     }
@@ -191,9 +245,19 @@ export class WorldMapRendererService {
     } as L.GeoJSONOptions & L.PolylineOptions);
 
     this.activeCountryLayer = L.layerGroup([activeOutlineLayer]).addTo(this.map);
-    this.renderQuestionLayer(activeCountryGeometry, questions, expandedBbox, onQuestionDragEnd, onAreaClose);
+    this.renderQuestionLayer(
+      activeCountryGeometry,
+      questions,
+      expandedBbox,
+      onQuestionDragEnd,
+      onAreaClose,
+    );
 
-    const playableAreaBounds = this.getPlayableAreaBounds(activeCountryGeometry, questions, expandedBbox);
+    const playableAreaBounds = this.getPlayableAreaBounds(
+      activeCountryGeometry,
+      questions,
+      expandedBbox,
+    );
     if (shouldFitMap) {
       this.fitBounds(
         playableAreaBounds ?? activeOutlineLayer.getBounds(),
@@ -219,6 +283,41 @@ export class WorldMapRendererService {
     return this.map;
   }
 
+  private renderVisibleStationRadii(): void {
+    if (!this.map || !this.stationRadiusRenderer) {
+      return;
+    }
+
+    this.stationRadiusLayer?.remove();
+    this.stationRadiusLayer = undefined;
+    if (this.map.getZoom() < MIN_STATION_RADIUS_ZOOM) {
+      this.stationRadiusVisibilityChange?.(true);
+      return;
+    }
+    this.stationRadiusVisibilityChange?.(false);
+
+    const visibleBounds = this.map.getBounds().pad(0.25);
+    const circles = this.stationRadiusStations
+      .filter((station) => visibleBounds.contains([station.lat, station.lng]))
+      .map((station) =>
+        L.circle([station.lat, station.lng], {
+          radius: 1000,
+          pane: 'stationRadiusPane',
+          renderer: this.stationRadiusRenderer,
+          interactive: false,
+          color: '#2e6e60',
+          weight: 1.5,
+          opacity: 0.82,
+          dashArray: '5, 4',
+          fill: false,
+        }),
+      );
+
+    if (circles.length > 0) {
+      this.stationRadiusLayer = L.layerGroup(circles).addTo(this.map);
+    }
+  }
+
   private renderQuestionLayer(
     activeCountryGeometry: FeatureCollection<Polygon | MultiPolygon> | null,
     questions: GameQuestion[],
@@ -237,7 +336,11 @@ export class WorldMapRendererService {
     const layers: L.Layer[] = [];
 
     if (activeCountryGeometry) {
-      const playableArea = this.buildPlayableArea(activeCountryGeometry, questions, thermometerBbox);
+      const playableArea = this.buildPlayableArea(
+        activeCountryGeometry,
+        questions,
+        thermometerBbox,
+      );
       if (playableArea && playableArea.features.length > 0) {
         const mask = subtractGeometry(activeCountryGeometry, playableArea);
         if (mask.features.length > 0) {
@@ -335,28 +438,30 @@ export class WorldMapRendererService {
       startPoint: { lat: number; lng: number },
       endPoint: { lat: number; lng: number },
     ): L.LatLng[] => {
-      const bbox = thermometerBbox ?? (() => {
-        const projectedStart = L.CRS.EPSG3857.project(L.latLng(startPoint.lat, startPoint.lng));
-        const projectedEnd = L.CRS.EPSG3857.project(L.latLng(endPoint.lat, endPoint.lng));
-        const projectedMid = L.point(
-          (projectedStart.x + projectedEnd.x) / 2,
-          (projectedStart.y + projectedEnd.y) / 2,
-        );
-        const localExtentMeters = Math.max(projectedStart.distanceTo(projectedEnd) * 0.75, 30000);
-        const southWest = L.CRS.EPSG3857.unproject(
-          L.point(projectedMid.x - localExtentMeters, projectedMid.y - localExtentMeters),
-        );
-        const northEast = L.CRS.EPSG3857.unproject(
-          L.point(projectedMid.x + localExtentMeters, projectedMid.y + localExtentMeters),
-        );
+      const bbox =
+        thermometerBbox ??
+        (() => {
+          const projectedStart = L.CRS.EPSG3857.project(L.latLng(startPoint.lat, startPoint.lng));
+          const projectedEnd = L.CRS.EPSG3857.project(L.latLng(endPoint.lat, endPoint.lng));
+          const projectedMid = L.point(
+            (projectedStart.x + projectedEnd.x) / 2,
+            (projectedStart.y + projectedEnd.y) / 2,
+          );
+          const localExtentMeters = Math.max(projectedStart.distanceTo(projectedEnd) * 0.75, 30000);
+          const southWest = L.CRS.EPSG3857.unproject(
+            L.point(projectedMid.x - localExtentMeters, projectedMid.y - localExtentMeters),
+          );
+          const northEast = L.CRS.EPSG3857.unproject(
+            L.point(projectedMid.x + localExtentMeters, projectedMid.y + localExtentMeters),
+          );
 
-        return {
-          minLng: southWest.lng,
-          maxLng: northEast.lng,
-          minLat: southWest.lat,
-          maxLat: northEast.lat,
-        };
-      })();
+          return {
+            minLng: southWest.lng,
+            maxLng: northEast.lng,
+            minLat: southWest.lat,
+            maxLat: northEast.lat,
+          };
+        })();
 
       return getBisectorPath(startPoint, endPoint, bbox).map(([lng, lat]) => L.latLng(lat, lng));
     };
@@ -401,10 +506,9 @@ export class WorldMapRendererService {
         const nextMidLng = (s.lng + e.lng) / 2;
         midDot.setLatLng(L.latLng(nextMidLat, nextMidLng));
 
-        bisectorLine.setLatLngs(createBisectorLatLngs(
-          { lat: s.lat, lng: s.lng },
-          { lat: e.lat, lng: e.lng },
-        ));
+        bisectorLine.setLatLngs(
+          createBisectorLatLngs({ lat: s.lat, lng: s.lng }, { lat: e.lat, lng: e.lng }),
+        );
       };
 
       startMarker.on('drag', () => {
@@ -549,9 +653,7 @@ export class WorldMapRendererService {
     return playableArea;
   }
 
-  private buildBboxFeature(
-    geometry: FeatureCollection<Polygon | MultiPolygon>,
-  ): Feature<Polygon> {
+  private buildBboxFeature(geometry: FeatureCollection<Polygon | MultiPolygon>): Feature<Polygon> {
     const bbox = getBoundingBox(geometry);
     const margin = 2;
 

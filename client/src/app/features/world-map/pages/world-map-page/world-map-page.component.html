@@ -94,7 +94,7 @@
       <div class="map-actions">
         <button type="button" class="add-question-trigger" nz-button (click)="openQuestionPicker()">
           <span class="add-question-plus" aria-hidden="true">+</span>
-          Add <span class="add-question-long-label">question</span>
+          <span>Add</span><span class="add-question-long-label">question</span>
         </button>
 
         <button
@@ -141,11 +141,24 @@
           <li nz-menu-item [nzDisabled]="!isLocationSupported" (click)="toggleUserLocation()">
             {{ $locationMenuLabel() }}
           </li>
+          <li
+            nz-menu-item
+            [nzDisabled]="$selectedCountryCode() === null"
+            (click)="toggleStationRadii()"
+          >
+            {{ $stationRadiusMenuLabel() }}
+          </li>
           <li nz-menu-item [nzDisabled]="!$canClearSavedData()" (click)="confirmClearQuestions()">
             Clear saved data
           </li>
         </ul>
       </nz-dropdown-menu>
+
+      @if ($stationRadiusStatus(); as stationStatus) {
+        <div class="station-radius-status" role="status" aria-live="polite">
+          {{ stationStatus }}
+        </div>
+      }
 
       @if ($contextMenuPosition(); as menuPosition) {
         <button

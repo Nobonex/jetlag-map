@@ -28,6 +28,7 @@ import { WorldMapStateService } from '../../services/world-map-state.service';
 import { QuestionsSidebarComponent } from '../../components/questions-sidebar/questions-sidebar.component';
 import { isAreaQuestion } from '../../models/radar-question.model';
 import { UserLocationService } from '../../services/user-location.service';
+import { RailwayStationService } from '../../services/railway-station.service';
 
 const CONTEXT_MENU_WIDTH = 300;
 const CONTEXT_MENU_HEIGHT = 250;
@@ -68,6 +69,7 @@ export class WorldMapPageComponent implements AfterViewInit, OnDestroy {
   private readonly modalService = inject(NzModalService);
   private readonly userLocationService = inject(UserLocationService);
   private readonly ngZone = inject(NgZone);
+  private readonly railwayStationService = inject(RailwayStationService);
 
   protected readonly $isSidebarExpanded = signal(true);
   protected readonly $isSheetDragging = signal(false);
@@ -79,6 +81,11 @@ export class WorldMapPageComponent implements AfterViewInit, OnDestroy {
   protected readonly $countryOptions = this.countryBoundaryService.$countryOptions;
   protected readonly $isLoadingCountries = this.countryBoundaryService.$isLoadingCountries;
   protected readonly $isTrackingLocation = this.userLocationService.$isTracking;
+  protected readonly $areStationRadiiEnabled = signal(false);
+  protected readonly $stationCount = signal<number | null>(null);
+  protected readonly $stationRadiiNeedZoom = signal(false);
+  protected readonly $isLoadingStations = this.railwayStationService.$isLoading;
+  protected readonly $stationError = this.railwayStationService.$error;
   protected readonly $locationMenuLabel = computed(() => {
     if (this.$isTrackingLocation()) {
       return 'Hide my location';
@@ -89,6 +96,33 @@ export class WorldMapPageComponent implements AfterViewInit, OnDestroy {
   protected readonly $canClearSavedData = computed(
     () => this.$questions().length > 0 || this.$selectedCountryCode() !== null,
   );
+  protected readonly $stationRadiusMenuLabel = computed(() => {
+    if (this.$isLoadingStations()) {
+      return 'Loading train stations...';
+    }
+    if (this.$stationError()) {
+      return 'Station loading failed - retry';
+    }
+    return this.$areStationRadiiEnabled()
+      ? 'Hide 1 km station zones'
+      : 'Show 1 km around train stations';
+  });
+  protected readonly $stationRadiusStatus = computed(() => {
+    if (this.$isLoadingStations()) {
+      return 'Loading train stations';
+    }
+    const error = this.$stationError();
+    if (error) {
+      return error;
+    }
+    const count = this.$stationCount();
+    if (!this.$areStationRadiiEnabled() || count === null) {
+      return null;
+    }
+    return this.$stationRadiiNeedZoom()
+      ? `${count} stations loaded - zoom in to see the 1 km zones`
+      : `${count} train stations and halts loaded`;
+  });
   protected readonly $drawingAreaQuestionId = computed(
     () =>
       this.$questions().find((question) => isAreaQuestion(question) && !question.isClosed)?.id ??
@@ -163,6 +197,7 @@ export class WorldMapPageComponent implements AfterViewInit, OnDestroy {
     void this.syncRenderEffect;
     void this.syncUserLocationEffect;
     this.userLocationService.stop();
+    this.railwayStationService.cancelRequest();
     this.detachResponsiveSidebarListener();
     this.detachPointerMoveListener();
     this.clearLongPressTimer();
@@ -174,11 +209,20 @@ export class WorldMapPageComponent implements AfterViewInit, OnDestroy {
 
   protected onSelectedCountryChange(countryCode: string | null): void {
     this.closeContextMenu();
+    this.railwayStationService.cancelRequest();
+    this.worldMapRendererService.clearStationRadii();
+    this.$stationCount.set(null);
+    this.$stationRadiiNeedZoom.set(false);
     this.worldMapStateService.setSelectedCountry(countryCode);
 
     if (!countryCode) {
+      this.$areStationRadiiEnabled.set(false);
       this.triggerRender(true);
       return;
+    }
+
+    if (this.$areStationRadiiEnabled()) {
+      void this.loadStationRadii(countryCode);
     }
 
     void this.countryBoundaryService.loadDetailedCountryGeometry(countryCode).then(() => {
@@ -458,6 +502,21 @@ export class WorldMapPageComponent implements AfterViewInit, OnDestroy {
     this.userLocationService.start();
   }
 
+  protected toggleStationRadii(): void {
+    const countryCode = this.$selectedCountryCode();
+    if (!countryCode) {
+      return;
+    }
+
+    if (this.$areStationRadiiEnabled() && !this.$stationError()) {
+      this.disableStationRadii();
+      return;
+    }
+
+    this.$areStationRadiiEnabled.set(true);
+    void this.loadStationRadii(countryCode);
+  }
+
   protected async shareState(): Promise<void> {
     const shareLink = this.worldMapStateService.createShareLink();
     const copied = await copyText(shareLink);
@@ -552,9 +611,40 @@ export class WorldMapPageComponent implements AfterViewInit, OnDestroy {
   }
 
   private clearSavedData(): void {
+    this.disableStationRadii();
     this.worldMapStateService.clearSavedData();
     this.closeContextMenu();
     this.triggerRender(true);
+  }
+
+  private async loadStationRadii(countryCode: string): Promise<void> {
+    const country = this.countryBoundaryService.getCountryByCode(countryCode);
+    if (!country) {
+      return;
+    }
+
+    this.$stationCount.set(null);
+    try {
+      const stations = await this.railwayStationService.loadStations(country);
+      if (this.$areStationRadiiEnabled() && this.$selectedCountryCode() === countryCode) {
+        this.$stationCount.set(stations.length);
+        this.worldMapRendererService.showStationRadii(stations, (needsMoreZoom) => {
+          this.$stationRadiiNeedZoom.set(needsMoreZoom);
+        });
+      }
+    } catch (error: unknown) {
+      if (!(error instanceof DOMException && error.name === 'AbortError')) {
+        this.worldMapRendererService.clearStationRadii();
+      }
+    }
+  }
+
+  private disableStationRadii(): void {
+    this.railwayStationService.cancelRequest();
+    this.worldMapRendererService.clearStationRadii();
+    this.$areStationRadiiEnabled.set(false);
+    this.$stationCount.set(null);
+    this.$stationRadiiNeedZoom.set(false);
   }
 
   private openContextMenu(clientX: number, clientY: number, latLng: L.LatLng): void {

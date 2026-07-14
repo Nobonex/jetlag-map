@@ -7,6 +7,7 @@ import { CountryBoundaryService } from '../../services/country-boundary.service'
 import { QuestionsService } from '../../services/questions.service';
 import { WorldMapStateService } from '../../services/world-map-state.service';
 import { WorldMapRendererService } from '../../services/world-map-renderer.service';
+import { RailwayStationService } from '../../services/railway-station.service';
 import { WorldMapPageComponent } from './world-map-page.component';
 
 const SELECTED_COUNTRY_STORAGE_KEY = 'jetlag.selected-country.v1';
@@ -19,9 +20,7 @@ describe('WorldMapPageComponent', () => {
     globalThis.history.replaceState(null, '', '/');
 
     globalThis.fetch = vi.fn(async (input: string | URL | Request) => {
-      const url = String(
-        typeof input === 'string' || input instanceof URL ? input : input.url
-      );
+      const url = String(typeof input === 'string' || input instanceof URL ? input : input.url);
 
       if (url.includes('countries-10m.topo.json')) {
         return new Response(
@@ -36,26 +35,32 @@ describe('WorldMapPageComponent', () => {
                     type: 'Polygon',
                     id: '004',
                     properties: { name: 'Afghanistan' },
-                    arcs: [[0]]
-                  }
-                ]
-              }
+                    arcs: [[0]],
+                  },
+                ],
+              },
             },
-            arcs: [[[0, 0], [10, 0], [0, 10], [-10, 0], [0, -10]]]
-          })
+            arcs: [
+              [
+                [0, 0],
+                [10, 0],
+                [0, 10],
+                [-10, 0],
+                [0, -10],
+              ],
+            ],
+          }),
         );
       }
 
       return new Response(
-        JSON.stringify([
-          { ccn3: '004', cca3: 'AFG', cca2: 'AF', name: 'Afghanistan' }
-        ])
+        JSON.stringify([{ ccn3: '004', cca3: 'AFG', cca2: 'AF', name: 'Afghanistan' }]),
       );
     }) as typeof fetch;
 
     await TestBed.configureTestingModule({
       imports: [WorldMapPageComponent],
-      providers: [provideAnimationsAsync('noop'), provideNzI18n(en_US)]
+      providers: [provideAnimationsAsync('noop'), provideNzI18n(en_US)],
     }).compileComponents();
   });
 
@@ -206,5 +211,32 @@ describe('WorldMapPageComponent', () => {
 
     expect(openContextMenu).not.toHaveBeenCalled();
     vi.useRealTimers();
+  });
+
+  it('should toggle station radii for the selected country', async () => {
+    const fixture = TestBed.createComponent(WorldMapPageComponent);
+    const component = fixture.componentInstance;
+    const renderer = TestBed.inject(WorldMapRendererService);
+    const stationService = TestBed.inject(RailwayStationService);
+    vi.spyOn(component as any, 'initializeMap').mockImplementation(() => {});
+    vi.spyOn(renderer, 'showStationRadii').mockImplementation(() => {});
+    const clearStationRadii = vi.spyOn(renderer, 'clearStationRadii').mockImplementation(() => {});
+    vi.spyOn(stationService, 'loadStations').mockResolvedValue([
+      { id: 'node/1', name: 'Station', lat: 34.5, lng: 69.2 },
+    ]);
+    fixture.detectChanges();
+    await fixture.whenStable();
+
+    component['onSelectedCountryChange']('AFG');
+    component['toggleStationRadii']();
+    await vi.waitFor(() => expect(renderer.showStationRadii).toHaveBeenCalledOnce());
+
+    expect(component['$stationCount']()).toBe(1);
+    expect(component['$areStationRadiiEnabled']()).toBe(true);
+
+    component['toggleStationRadii']();
+
+    expect(clearStationRadii).toHaveBeenCalled();
+    expect(component['$areStationRadiiEnabled']()).toBe(false);
   });
 });
