@@ -227,6 +227,11 @@ function getProjectedBisector(start: QuestionCenter, end: QuestionCenter): {
   };
 }
 
+export function getProjectedMidpoint(start: QuestionCenter, end: QuestionCenter): QuestionCenter {
+  const [lng, lat] = unprojectPoint(getProjectedBisector(start, end).mid);
+  return { lat, lng };
+}
+
 function getProjectedBisectorEdgePoints(
   start: QuestionCenter,
   end: QuestionCenter,
