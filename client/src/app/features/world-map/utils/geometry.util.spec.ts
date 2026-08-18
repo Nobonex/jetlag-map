@@ -9,6 +9,7 @@ import {
   getBisectorEdgePoints,
   getBisectorPoints,
   getBoundingBox,
+  getProjectedMidpoint,
   normalizeLongitude,
 } from './geometry.util';
 
@@ -34,7 +35,7 @@ function toProjectedPoint(lng: number, lat: number): { x: number; y: number } {
   return { x: projected.x, y: projected.y };
 }
 
-function getProjectedMidpoint(
+function calculateProjectedMidpoint(
   start: { lat: number; lng: number },
   end: { lat: number; lng: number },
 ): { lat: number; lng: number } {
@@ -94,6 +95,22 @@ function projectedBisectorDot(
     (projectedEnd.y - projectedStart.y) * (projectedPoint.y - midpoint.y)
   );
 }
+
+describe('getProjectedMidpoint', () => {
+  it.each([
+    [{ lat: 62.5, lng: -125 }, { lat: 28.25, lng: 105 }],
+    [{ lat: -54, lng: -72 }, { lat: -18.5, lng: 132 }],
+  ])('returns the segment midpoint in the projected map plane', (start, end) => {
+    const midpoint = getProjectedMidpoint(start, end);
+    const projectedStart = toProjectedPoint(start.lng, start.lat);
+    const projectedEnd = toProjectedPoint(end.lng, end.lat);
+    const projectedMidpoint = toProjectedPoint(midpoint.lng, midpoint.lat);
+
+    expect(projectedMidpoint.x).toBeCloseTo((projectedStart.x + projectedEnd.x) / 2, 6);
+    expect(projectedMidpoint.y).toBeCloseTo((projectedStart.y + projectedEnd.y) / 2, 6);
+    expect(Math.abs(projectedBisectorDot(start, end, midpoint))).toBeLessThan(0.1);
+  });
+});
 
 describe('getBoundingBox', () => {
   it('computes bounds for a single Polygon feature', () => {
@@ -450,7 +467,7 @@ describe('getBisectorEdgePoints', () => {
       testBbox,
     );
 
-    const projectedMidpoint = getProjectedMidpoint(
+    const projectedMidpoint = calculateProjectedMidpoint(
       { lat: 0, lng: 5 },
       { lat: 10, lng: 5 },
     );
@@ -480,7 +497,7 @@ describe('getBisectorEdgePoints', () => {
       { lat: p2[1], lng: p2[0] },
     ))).toBeLessThan(1e-2);
 
-    const projectedMidpoint = getProjectedMidpoint(
+    const projectedMidpoint = calculateProjectedMidpoint(
       { lat: 10, lng: 0 },
       { lat: 0, lng: 10 },
     );
