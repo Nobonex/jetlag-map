@@ -1,0 +1,85 @@
+:host {
+  position: absolute;
+  top: 14px;
+  left: 14px;
+  z-index: 1060;
+}
+
+.live-status {
+  display: flex;
+  align-items: stretch;
+  overflow: hidden;
+  border: 1px solid var(--paper-border-strong);
+  border-radius: 8px;
+  background: var(--paper);
+  box-shadow: var(--shadow-float);
+}
+
+.summary,
+.stop {
+  border: 0;
+  cursor: pointer;
+}
+
+.summary {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  min-height: 48px;
+  padding: 7px 12px;
+  color: var(--ink);
+  background: transparent;
+  text-align: left;
+}
+
+.summary > span:last-child {
+  display: grid;
+}
+
+.summary strong {
+  font-family: var(--font-label);
+  font-size: 0.75rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.summary small {
+  color: var(--ink-muted);
+}
+
+.dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--customs-green);
+  box-shadow: 0 0 0 4px fade(#2e8b62, 18%);
+}
+
+.stop {
+  padding-inline: 11px;
+  color: var(--signal-red);
+  border-left: 1px solid var(--paper-border);
+  background: var(--paper-deep);
+  font-family: var(--font-label);
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.summary:focus-visible,
+.stop:focus-visible {
+  position: relative;
+  outline: 3px solid var(--focus);
+  outline-offset: -3px;
+}
+
+@media (max-width: 720px) {
+  :host {
+    top: 8px;
+    left: 8px;
+  }
+
+  .summary {
+    min-height: 42px;
+    padding: 5px 9px;
+  }
+}

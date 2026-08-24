@@ -1,0 +1,147 @@
+:host {
+  display: contents;
+}
+
+.live-dialog,
+.role-grid section {
+  display: grid;
+  gap: 12px;
+}
+
+.privacy-note {
+  margin: 0;
+  padding: 10px 12px;
+  border-left: 4px solid var(--customs-green);
+  background: var(--paper-deep);
+  color: var(--ink-muted);
+}
+
+.field-label,
+.role-stamp {
+  font-family: var(--font-label);
+  font-size: 0.72rem;
+  font-weight: 800;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+.role-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.role-grid section {
+  align-content: start;
+  padding: 16px;
+  border: 1px solid var(--paper-border);
+  background: var(--paper-light);
+}
+
+h3,
+p {
+  margin: 0;
+}
+
+h3 {
+  font-family: var(--font-display);
+  color: var(--ink);
+}
+
+.role-stamp {
+  width: fit-content;
+  padding: 2px 7px;
+  border: 1px solid var(--signal-red);
+  color: var(--signal-red);
+  transform: rotate(-1deg);
+}
+
+.button-row,
+.session-heading,
+.dialog-footer,
+.participant-list li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.session-heading > div {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+textarea {
+  resize: vertical;
+  font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+  font-size: 0.72rem;
+}
+
+.pairing-qr {
+  width: min(260px, 100%);
+  margin-inline: auto;
+  border: 8px solid #ffffff;
+}
+
+.participant-list {
+  display: grid;
+  gap: 6px;
+  margin: 4px 0;
+  padding: 0;
+  list-style: none;
+}
+
+.participant-list li {
+  padding: 8px 10px;
+  border-bottom: 1px dashed var(--paper-border);
+}
+
+.participant-list span,
+.connection-status {
+  color: var(--ink-muted);
+}
+
+.scanner-panel {
+  display: grid;
+  gap: 10px;
+  padding: 12px;
+  border: 2px solid var(--passport-green);
+  background: var(--paper-deep);
+}
+
+.scanner-panel video {
+  width: 100%;
+  max-height: 300px;
+  object-fit: cover;
+  background: var(--ink);
+}
+
+.live-error {
+  padding: 8px 10px;
+  border-left: 4px solid var(--signal-red);
+  color: var(--signal-red);
+  background: color-mix(in srgb, var(--signal-red) 8%, var(--paper));
+}
+
+.dialog-footer {
+  justify-content: flex-end;
+  padding-top: 4px;
+}
+
+hr {
+  width: 100%;
+  margin: 4px 0;
+  border: 0;
+  border-top: 1px dashed var(--paper-border);
+}
+
+@media (max-width: 620px) {
+  .role-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .session-heading {
+    align-items: flex-start;
+  }
+}

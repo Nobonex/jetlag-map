@@ -58,6 +58,27 @@ describe('UserLocationService', () => {
     expect(service.$error()).toBe('Location permission denied');
     expect(clearWatch).toHaveBeenCalledWith(23);
   });
+
+  it('keeps one watcher alive while another consumer still needs location', () => {
+    const clearWatch = vi.fn();
+    const watchPosition = vi.fn(() => 31);
+    setGeolocation({ watchPosition, clearWatch });
+    const service = new UserLocationService();
+
+    service.start('map');
+    service.start('live-tracking');
+    service.stop('map');
+
+    expect(watchPosition).toHaveBeenCalledOnce();
+    expect(clearWatch).not.toHaveBeenCalled();
+    expect(service.$isMapTracking()).toBe(false);
+    expect(service.$isLiveTracking()).toBe(true);
+
+    service.stop('live-tracking');
+
+    expect(clearWatch).toHaveBeenCalledWith(31);
+    expect(service.$isTracking()).toBe(false);
+  });
 });
 
 function setGeolocation(value: Pick<Geolocation, 'watchPosition' | 'clearWatch'>): void {

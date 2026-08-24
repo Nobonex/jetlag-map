@@ -122,6 +122,40 @@ textarea {
   color: var(--signal-red);
 }
 
+.live-tracking-modal .ant-modal {
+  width: min(760px, calc(100vw - 24px)) !important;
+}
+
+.live-tracking-modal .ant-modal-content {
+  overflow: hidden;
+  padding: 0;
+  border: 1px solid var(--paper-border-strong);
+  border-top: 5px solid var(--customs-green);
+  border-radius: 10px;
+  background: var(--paper);
+  box-shadow: var(--shadow-float);
+}
+
+.live-tracking-modal .ant-modal-header {
+  margin: 0;
+  padding: 18px 24px 12px;
+  border-bottom: 1px dashed var(--paper-border);
+  background: var(--paper);
+}
+
+.live-tracking-modal .ant-modal-title {
+  color: var(--ink);
+  font-family: var(--font-display);
+  font-size: 1.35rem;
+  font-weight: 800;
+}
+
+.live-tracking-modal .ant-modal-body {
+  max-height: min(76dvh, 760px);
+  padding: 20px 24px 24px;
+  overflow-y: auto;
+}
+
 @media (max-width: 520px) {
   .ant-modal-confirm {
     max-width: calc(100vw - 24px);
@@ -141,6 +175,15 @@ textarea {
   .ant-modal-confirm .ant-modal-confirm-btns .ant-btn {
     width: 100%;
     margin-inline: 0;
+  }
+
+  .live-tracking-modal .ant-modal {
+    top: 12px;
+  }
+
+  .live-tracking-modal .ant-modal-header,
+  .live-tracking-modal .ant-modal-body {
+    padding-inline: 16px;
   }
 
 }
@@ -331,6 +374,33 @@ app-world-map-page {
     border-radius: 999px;
     background: fade(#3298dc, 28%);
     animation: user-location-pulse 2s ease-out infinite;
+  }
+
+  .remote-participant-marker {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  .remote-participant-marker__dot {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 28px;
+    height: 28px;
+    border: 3px solid var(--paper-light);
+    border-radius: 50% 50% 50% 12%;
+    transform: rotate(-45deg);
+    background: var(--customs-green);
+    box-shadow: 0 2px 8px fade(#102b22, 38%);
+    color: var(--paper-light);
+    font-family: var(--font-label);
+    font-size: 11px;
+    font-weight: 800;
+  }
+
+  .remote-participant-marker__dot > span {
+    transform: rotate(45deg);
   }
 }
 

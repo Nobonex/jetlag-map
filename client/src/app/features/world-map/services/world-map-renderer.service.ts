@@ -17,6 +17,7 @@ import {
 import { buildOutsideMask, intersectGeometry, subtractGeometry } from '../utils/map-mask.util';
 import type { UserLocation } from './user-location.service';
 import type { RailwayStation } from '../models/railway-station.model';
+import type { RemoteParticipant } from '../models/live-tracking.model';
 import {
   createCirclePolygon,
   createAreaPolygon,
@@ -47,6 +48,7 @@ export class WorldMapRendererService {
   private userLocationLayer?: L.LayerGroup;
   private userLocationMarker?: L.Marker;
   private userLocationAccuracyCircle?: L.Circle;
+  private remoteParticipantsLayer?: L.LayerGroup;
   private stationRadiusLayer?: L.LayerGroup;
   private stationRadiusRenderer?: L.Canvas;
   private stationRadiusStations: RailwayStation[] = [];
@@ -91,6 +93,7 @@ export class WorldMapRendererService {
     this.userLocationLayer = undefined;
     this.userLocationMarker = undefined;
     this.userLocationAccuracyCircle = undefined;
+    this.remoteParticipantsLayer = undefined;
     this.stationRadiusRenderer = undefined;
   }
 
@@ -137,6 +140,43 @@ export class WorldMapRendererService {
     this.userLocationLayer = undefined;
     this.userLocationMarker = undefined;
     this.userLocationAccuracyCircle = undefined;
+  }
+
+  showRemoteParticipants(participants: RemoteParticipant[]): void {
+    if (!this.map) {
+      return;
+    }
+
+    this.remoteParticipantsLayer?.removeFrom(this.map);
+    const layers: L.Layer[] = [];
+    for (const participant of participants) {
+      if (!participant.position) {
+        continue;
+      }
+      const latLng = L.latLng(participant.position.lat, participant.position.lng);
+      layers.push(
+        L.circle(latLng, {
+          radius: participant.position.accuracyMeters,
+          color: '#1f6b4f',
+          weight: 1,
+          opacity: 0.58,
+          fillColor: '#2e8b62',
+          fillOpacity: 0.12,
+          interactive: false,
+        }),
+        L.marker(latLng, {
+          interactive: false,
+          zIndexOffset: 900,
+          icon: createRemoteParticipantIcon(participant.name),
+        }),
+      );
+    }
+    this.remoteParticipantsLayer = L.layerGroup(layers).addTo(this.map);
+  }
+
+  clearRemoteParticipants(): void {
+    this.remoteParticipantsLayer?.remove();
+    this.remoteParticipantsLayer = undefined;
   }
 
   showStationRadii(
@@ -733,5 +773,28 @@ function createUserLocationIcon(): L.DivIcon {
     iconSize: [24, 24],
     iconAnchor: [12, 12],
     html: '<span class="user-location-marker__pulse"></span><span class="user-location-marker__dot"></span>',
+  });
+}
+
+function createRemoteParticipantIcon(name: string): L.DivIcon {
+  const initial = [...name.trim()][0]?.toLocaleUpperCase() ?? 'S';
+  return L.divIcon({
+    className: 'remote-participant-marker',
+    iconSize: [32, 32],
+    iconAnchor: [16, 16],
+    html: `<span class="remote-participant-marker__dot"><span>${escapeHtml(initial)}</span></span>`,
+  });
+}
+
+function escapeHtml(value: string): string {
+  return value.replace(/[&<>"']/g, (character) => {
+    const entities: Record<string, string> = {
+      '&': '&amp;',
+      '<': '&lt;',
+      '>': '&gt;',
+      '"': '&quot;',
+      "'": '&#039;',
+    };
+    return entities[character] ?? character;
   });
 }

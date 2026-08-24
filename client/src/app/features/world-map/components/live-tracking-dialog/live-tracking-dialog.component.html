@@ -1,0 +1,137 @@
+<nz-modal
+  nzWrapClassName="live-tracking-modal"
+  nzTitle="Live location relay"
+  [nzVisible]="visible()"
+  [nzFooter]="null"
+  [nzClosable]="false"
+  [nzMaskClosable]="false"
+  (nzOnCancel)="close()"
+>
+  <ng-container *nzModalContent>
+    <div class="live-dialog">
+      <p class="privacy-note">
+        PeerJS Cloud introduces the browsers and may relay encrypted traffic when a direct connection
+        is blocked. Locations are not stored, and the session expires after six hours.
+      </p>
+
+      @if (!$role()) {
+        <label class="field-label" for="live-display-name">Your display name</label>
+        <input
+          id="live-display-name"
+          nz-input
+          maxlength="80"
+          [(ngModel)]="displayName"
+          placeholder="Player name"
+        />
+
+        <div class="role-grid">
+          <section>
+            <span class="role-stamp">HIDER</span>
+            <h3>Receive seeker locations</h3>
+            <p>Create one session. Every seeker can join using the same short code or QR.</p>
+            <button
+              type="button"
+              nz-button
+              nzType="primary"
+              [nzLoading]="$isBusy()"
+              (click)="createSession()"
+            >
+              Create session
+            </button>
+          </section>
+
+          <section>
+            <span class="role-stamp">SEEKER</span>
+            <h3>Share this device</h3>
+            <p>Enter the hider's session code or scan the QR. No answer code is needed.</p>
+            <input
+              nz-input
+              [(ngModel)]="sessionInput"
+              aria-label="Hider session code"
+              placeholder="JLM1..."
+              (keydown.enter)="joinSession()"
+            />
+            <div class="button-row">
+              <button type="button" nz-button (click)="startScanner()">Scan QR</button>
+              <button
+                type="button"
+                nz-button
+                nzType="primary"
+                [disabled]="!sessionInput.trim()"
+                [nzLoading]="$isBusy()"
+                (click)="joinSession()"
+              >
+                Join session
+              </button>
+            </div>
+          </section>
+        </div>
+      }
+
+      @if ($role() === 'hider') {
+        <div class="session-heading">
+          <div><span class="role-stamp">HIDER</span><h3>Session open</h3></div>
+          <button type="button" nz-button nzDanger (click)="stopSession()">Stop session</button>
+        </div>
+
+        @if ($invitationCode(); as invitationCode) {
+          <p>Seekers can scan this QR or enter the code. They connect automatically.</p>
+          @if ($qrDataUrl(); as qrUrl) {
+            <img class="pairing-qr" [src]="qrUrl" alt="QR code containing the live session code" />
+          }
+          <input
+            class="code-output"
+            nz-input
+            readonly
+            [value]="invitationCode"
+            aria-label="Live session code"
+          />
+          <button type="button" nz-button (click)="copyCode(invitationCode)">{{ $copyLabel() }}</button>
+        }
+
+        <p class="connection-status" role="status" aria-live="polite">
+          {{ $participants().length }} connected · {{ $status() }}
+        </p>
+        @if ($participants().length > 0) {
+          <ul class="participant-list" aria-label="Live seekers">
+            @for (participant of $participants(); track participant.id) {
+              <li>
+                <strong>{{ participant.name }}</strong>
+                <span>{{ participant.position ? 'Location received' : 'Connected' }}</span>
+              </li>
+            }
+          </ul>
+        }
+      }
+
+      @if ($role() === 'seeker') {
+        <div class="session-heading">
+          <div><span class="role-stamp">SEEKER</span><h3>Location relay</h3></div>
+          <button type="button" nz-button nzDanger (click)="stopSession()">Stop sharing</button>
+        </div>
+        <p class="connection-status" role="status" aria-live="polite">
+          Status: {{ $status() === 'connected' ? 'sharing live location' : $status() }}
+        </p>
+        @if ($status() === 'waiting' || $status() === 'error') {
+          <button type="button" nz-button nzType="primary" (click)="retryConnection()">Retry connection</button>
+        }
+      }
+
+      @if ($isScanning()) {
+        <div class="scanner-panel">
+          <video #scanVideo muted playsinline aria-label="QR code camera preview"></video>
+          <p>Point the camera at the hider's QR code.</p>
+          <button type="button" nz-button (click)="stopScanner()">Cancel scan</button>
+        </div>
+      }
+
+      @if ($error(); as error) {
+        <p class="live-error" role="alert">{{ error }}</p>
+      }
+
+      <div class="dialog-footer">
+        <button type="button" nz-button (click)="close()">Close</button>
+      </div>
+    </div>
+  </ng-container>
+</nz-modal>

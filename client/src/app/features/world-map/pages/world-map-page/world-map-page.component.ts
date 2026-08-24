@@ -29,6 +29,9 @@ import { QuestionsSidebarComponent } from '../../components/questions-sidebar/qu
 import { isAreaQuestion } from '../../models/radar-question.model';
 import { UserLocationService } from '../../services/user-location.service';
 import { RailwayStationService } from '../../services/railway-station.service';
+import { LiveTrackingDialogComponent } from '../../components/live-tracking-dialog/live-tracking-dialog.component';
+import { LiveTrackingService } from '../../services/live-tracking.service';
+import { LiveTrackingStatusComponent } from '../../components/live-tracking-status/live-tracking-status.component';
 
 const CONTEXT_MENU_WIDTH = 300;
 const CONTEXT_MENU_HEIGHT = 250;
@@ -50,6 +53,8 @@ const TOUCH_GESTURE_CONTEXT_MENU_SUPPRESS_MS = 1200;
     NzSelectModule,
     NzTypographyModule,
     QuestionsSidebarComponent,
+    LiveTrackingDialogComponent,
+    LiveTrackingStatusComponent,
   ],
   templateUrl: './world-map-page.component.html',
   styleUrl: './world-map-page.component.less',
@@ -70,6 +75,7 @@ export class WorldMapPageComponent implements AfterViewInit, OnDestroy {
   private readonly userLocationService = inject(UserLocationService);
   private readonly ngZone = inject(NgZone);
   private readonly railwayStationService = inject(RailwayStationService);
+  private readonly liveTrackingService = inject(LiveTrackingService);
 
   protected readonly $isSidebarExpanded = signal(true);
   protected readonly $isSheetDragging = signal(false);
@@ -80,12 +86,13 @@ export class WorldMapPageComponent implements AfterViewInit, OnDestroy {
   protected readonly $questions = this.questionsService.$questions;
   protected readonly $countryOptions = this.countryBoundaryService.$countryOptions;
   protected readonly $isLoadingCountries = this.countryBoundaryService.$isLoadingCountries;
-  protected readonly $isTrackingLocation = this.userLocationService.$isTracking;
+  protected readonly $isTrackingLocation = this.userLocationService.$isMapTracking;
   protected readonly $areStationRadiiEnabled = signal(false);
   protected readonly $stationCount = signal<number | null>(null);
   protected readonly $stationRadiiNeedZoom = signal(false);
   protected readonly $isLoadingStations = this.railwayStationService.$isLoading;
   protected readonly $stationError = this.railwayStationService.$error;
+  protected readonly $isLiveTrackingDialogVisible = signal(false);
   protected readonly $locationMenuLabel = computed(() => {
     if (this.$isTrackingLocation()) {
       return 'Hide my location';
@@ -177,10 +184,19 @@ export class WorldMapPageComponent implements AfterViewInit, OnDestroy {
 
   private readonly syncUserLocationEffect = effect(() => {
     const position = this.userLocationService.$position();
-    if (position) {
+    if (position && this.userLocationService.$isMapTracking()) {
       this.worldMapRendererService.showUserLocation(position);
     } else {
       this.worldMapRendererService.clearUserLocation();
+    }
+  });
+
+  private readonly syncRemoteParticipantsEffect = effect(() => {
+    const participants = this.liveTrackingService.$remoteParticipants();
+    if (participants.length > 0) {
+      this.worldMapRendererService.showRemoteParticipants(participants);
+    } else {
+      this.worldMapRendererService.clearRemoteParticipants();
     }
   });
 
@@ -196,7 +212,9 @@ export class WorldMapPageComponent implements AfterViewInit, OnDestroy {
   ngOnDestroy(): void {
     void this.syncRenderEffect;
     void this.syncUserLocationEffect;
+    void this.syncRemoteParticipantsEffect;
     this.userLocationService.stop();
+    this.liveTrackingService.stop();
     this.railwayStationService.cancelRequest();
     this.detachResponsiveSidebarListener();
     this.detachPointerMoveListener();
@@ -248,6 +266,14 @@ export class WorldMapPageComponent implements AfterViewInit, OnDestroy {
     }
 
     requestAnimationFrame(() => this.worldMapRendererService.invalidateSize());
+  }
+
+  protected openLiveTracking(): void {
+    this.$isLiveTrackingDialogVisible.set(true);
+  }
+
+  protected closeLiveTracking(): void {
+    this.$isLiveTrackingDialogVisible.set(false);
   }
 
   protected onSheetToggle(): void {

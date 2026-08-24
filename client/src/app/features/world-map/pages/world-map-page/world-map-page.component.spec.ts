@@ -82,6 +82,8 @@ describe('WorldMapPageComponent', () => {
     expect(compiled.querySelector('.mobile-sheet-toggle')).not.toBeNull();
     expect(compiled.querySelector('.share-button')?.textContent).toContain('Share');
     expect(compiled.querySelector('.question-sidebar')?.getAttribute('tabindex')).toBe('0');
+    expect(compiled.querySelector('app-live-tracking-dialog')).not.toBeNull();
+    expect(compiled.querySelector('app-live-tracking-status')).not.toBeNull();
   });
 
   it('should restore a persisted selected country', async () => {

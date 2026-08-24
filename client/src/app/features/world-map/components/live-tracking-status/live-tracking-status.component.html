@@ -1,0 +1,18 @@
+@if ($role(); as role) {
+  <div class="live-status" role="status" aria-live="polite">
+    <button type="button" class="summary" (click)="opened.emit()">
+      <span class="dot" aria-hidden="true"></span>
+      <span>
+        <strong>{{ role === 'seeker' ? 'Location relay' : 'Live seekers' }}</strong>
+        <small>
+          @if (role === 'hider') {
+            {{ $participants().length }} paired · {{ $status() }}
+          } @else {
+            {{ $status() === 'connected' ? 'Sharing this device' : $status() }}
+          }
+        </small>
+      </span>
+    </button>
+    <button type="button" class="stop" (click)="stop()">Stop</button>
+  </div>
+}
