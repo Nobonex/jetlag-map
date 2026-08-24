@@ -7,6 +7,7 @@ export type LiveTrackingStatus =
   | 'waiting'
   | 'connecting'
   | 'connected'
+  | 'reconnecting'
   | 'error';
 
 export interface RemoteParticipant {
@@ -14,11 +15,12 @@ export interface RemoteParticipant {
   name: string;
   position: UserLocation | null;
   lastSeen: number | null;
-  connectionState: RTCPeerConnectionState;
+  connectionState: 'connected' | 'disconnected';
 }
 
 export interface LiveLocationMessage {
   type: 'location';
+  name: string;
   position: UserLocation;
   sentAt: number;
 }
@@ -26,6 +28,25 @@ export interface LiveLocationMessage {
 export interface LiveSessionMessage {
   type: 'session';
   expiresAt: number;
+  sentAt: number;
 }
 
-export type LiveTrackingMessage = LiveLocationMessage | LiveSessionMessage;
+export interface LiveHelloMessage {
+  type: 'hello';
+  name: string;
+  sentAt: number;
+}
+
+export type LiveTrackingMessage = LiveHelloMessage | LiveLocationMessage | LiveSessionMessage;
+
+export interface LiveTrackingInvitation {
+  channel: string;
+  key: Uint8Array<ArrayBuffer>;
+  expiresAt: number;
+}
+
+export interface EncryptedLiveTrackingMessage {
+  version: 1;
+  iv: string;
+  ciphertext: string;
+}

@@ -1,36 +1,38 @@
 import { Injectable, NgZone, effect, inject, signal } from '@angular/core';
-import type { DataConnection, Peer, PeerError, PeerErrorType, PeerOptions } from 'peerjs';
+import type {
+  ChannelMessage,
+  PresenceEvent,
+  SignallingClient,
+  SignallingClientState,
+} from '@metered-ca/realtime';
 
 import type {
   LiveLocationMessage,
+  LiveTrackingInvitation,
   LiveTrackingMessage,
   LiveTrackingRole,
   LiveTrackingStatus,
   RemoteParticipant,
 } from '../models/live-tracking.model';
+import {
+  createLiveTrackingInvitation,
+  decodeLiveTrackingInvitation,
+  decryptLiveTrackingMessage,
+  encryptLiveTrackingMessage,
+} from '../utils/live-tracking-crypto.util';
+import { LiveTrackingConfigService } from './live-tracking-config.service';
+import type { UserLocation } from './user-location.service';
 import { UserLocationService } from './user-location.service';
 
-const SESSION_DURATION_MS = 6 * 60 * 60 * 1000;
-const SIGNALING_TIMEOUT_MS = 15_000;
-const CONNECTION_TIMEOUT_MS = 20_000;
-const INVITATION_PREFIX = 'JLM1.';
-const CONNECTION_LABEL = 'jetlag-live-location-v1';
-const PEER_OPTIONS: PeerOptions = {
-  host: '0.peerjs.com',
-  port: 443,
-  path: '/',
-  secure: true,
-  debug: 0,
-};
-
-interface ConnectionMetadata {
-  protocol: typeof CONNECTION_LABEL;
-  name: string;
-}
+const HEARTBEAT_INTERVAL_MS = 15_000;
+const MIN_LOCATION_INTERVAL_MS = 5_000;
+const LOCATION_KEEPALIVE_MS = 30_000;
+const MIN_LOCATION_DISTANCE_METERS = 10;
 
 @Injectable({ providedIn: 'root' })
 export class LiveTrackingService {
   private readonly userLocationService = inject(UserLocationService);
+  private readonly configService = inject(LiveTrackingConfigService);
   private readonly ngZone = inject(NgZone);
 
   readonly $role = signal<LiveTrackingRole | null>(null);
@@ -40,19 +42,22 @@ export class LiveTrackingService {
   readonly $expiresAt = signal<number | null>(null);
   readonly $invitationCode = signal<string | null>(null);
 
-  private readonly connections = new Map<string, DataConnection>();
-  private peer: Peer | null = null;
-  private hiderPeerId: string | null = null;
+  private client: SignallingClient | null = null;
+  private invitation: LiveTrackingInvitation | null = null;
+  private localPeerId: string | null = null;
   private localName = '';
+  private heartbeatTimer: ReturnType<typeof setInterval> | null = null;
   private expiryTimer: ReturnType<typeof setTimeout> | null = null;
+  private readonly latestMessageTimes = new Map<string, number>();
+  private lastLocationPublishedAt = 0;
+  private lastPublishedPosition: UserLocation | null = null;
   private isStopping = false;
 
   private readonly broadcastLocationEffect = effect(() => {
     const position = this.userLocationService.$position();
-    if (!position || this.$role() !== 'seeker') {
-      return;
+    if (position && this.$role() === 'seeker' && this.$status() === 'connected') {
+      void this.publishLocation(position);
     }
-    this.sendToOpenConnections({ type: 'location', position, sentAt: Date.now() });
   });
 
   private readonly syncLocationErrorEffect = effect(() => {
@@ -64,108 +69,53 @@ export class LiveTrackingService {
   });
 
   async createSession(name: string): Promise<string | null> {
-    if (!this.isWebRtcSupported()) {
-      this.fail('Live tracking is not supported by this browser');
-      return null;
-    }
-
     this.stop();
-    this.$role.set('hider');
-    this.$status.set('preparing');
-    this.localName = cleanName(name, 'Hider');
-    this.setExpiry(Date.now() + SESSION_DURATION_MS);
+    const { code, invitation } = createLiveTrackingInvitation();
+    this.initializeSession('hider', name, code, invitation);
 
-    try {
-      const peer = await this.createPeer();
-      if (this.$role() !== 'hider') {
-        peer.destroy();
-        return null;
-      }
-      this.peer = peer;
-      this.configurePeerEvents(peer);
-      peer.on('connection', (connection) => {
-        this.ngZone.run(() => this.acceptIncomingConnection(connection));
-      });
-      const peerId = await this.waitForPeerOpen(peer);
-      if (this.peer !== peer) {
-        return null;
-      }
-
-      const invitationCode = encodeInvitation(peerId);
-      this.$invitationCode.set(invitationCode);
-      this.$status.set('waiting');
-      return invitationCode;
-    } catch {
-      if (this.$role() !== 'hider') {
-        return null;
-      }
-      this.stop();
-      this.fail('Could not reach the free signaling service. Try again.');
+    if (!(await this.connectTransport())) {
+      this.$invitationCode.set(null);
       return null;
     }
+    this.$status.set('waiting');
+    await this.publishSessionHeartbeat();
+    this.heartbeatTimer = setInterval(
+      () => void this.publishSessionHeartbeat(),
+      HEARTBEAT_INTERVAL_MS,
+    );
+    return code;
   }
 
   async joinSession(code: string, name: string): Promise<boolean> {
-    const hiderPeerId = decodeInvitation(code);
-    if (!hiderPeerId) {
-      this.fail('This session code is invalid');
-      return false;
-    }
-    if (!this.isWebRtcSupported()) {
-      this.fail('Live tracking is not supported by this browser');
+    const invitation = decodeLiveTrackingInvitation(code);
+    if (!invitation) {
+      this.fail('This session code is invalid or has expired');
       return false;
     }
 
     this.stop();
-    this.$role.set('seeker');
-    this.$status.set('preparing');
-    this.localName = cleanName(name, 'Seeker');
-    this.hiderPeerId = hiderPeerId;
-    this.$invitationCode.set(encodeInvitation(hiderPeerId));
-    this.setExpiry(Date.now() + SESSION_DURATION_MS);
-
-    try {
-      const peer = await this.createPeer();
-      if (this.$role() !== 'seeker') {
-        peer.destroy();
-        return false;
-      }
-      this.peer = peer;
-      this.configurePeerEvents(peer);
-      await this.waitForPeerOpen(peer);
-      if (this.peer !== peer) {
-        return false;
-      }
-      return true;
-    } catch {
-      if (this.$role() !== 'seeker') {
-        return false;
-      }
-      this.stop();
-      this.fail('Could not reach the free signaling service. Try again.');
+    this.initializeSession('seeker', name, code.trim(), invitation);
+    if (!(await this.connectTransport())) {
       return false;
     }
+    this.$status.set('waiting');
+    await this.publishMessage({ type: 'hello', name: this.localName, sentAt: Date.now() });
+    return true;
   }
 
   async reconnect(): Promise<void> {
-    if (this.$role() !== 'seeker' || !this.hiderPeerId) {
+    if (this.$role() !== 'seeker' || !this.$invitationCode()) {
+      return;
+    }
+    if (this.client?.state === 'reconnecting' || this.client?.state === 'connecting') {
       return;
     }
 
-    this.$error.set(null);
-    this.$status.set('connecting');
-    if (this.peer && !this.peer.destroyed) {
-      if (this.peer.disconnected) {
-        this.peer.reconnect();
-        return;
-      }
-      this.connectToHider(this.peer, this.hiderPeerId);
-      return;
-    }
-
-    const invitation = encodeInvitation(this.hiderPeerId);
+    const code = this.$invitationCode();
     const name = this.localName;
-    await this.joinSession(invitation, name);
+    if (code) {
+      await this.joinSession(code, name);
+    }
   }
 
   stop(): void {
@@ -173,18 +123,24 @@ export class LiveTrackingService {
     void this.syncLocationErrorEffect;
     this.isStopping = true;
     this.userLocationService.stop('live-tracking');
-    for (const connection of this.connections.values()) {
-      connection.close();
+    if (this.heartbeatTimer) {
+      clearInterval(this.heartbeatTimer);
+      this.heartbeatTimer = null;
     }
-    this.connections.clear();
-    this.peer?.destroy();
-    this.peer = null;
     if (this.expiryTimer) {
       clearTimeout(this.expiryTimer);
       this.expiryTimer = null;
     }
-    this.hiderPeerId = null;
+    if (this.client) {
+      void this.client.close();
+      this.client = null;
+    }
+    this.invitation = null;
+    this.localPeerId = null;
     this.localName = '';
+    this.latestMessageTimes.clear();
+    this.lastLocationPublishedAt = 0;
+    this.lastPublishedPosition = null;
     this.$role.set(null);
     this.$status.set('idle');
     this.$error.set(null);
@@ -194,267 +150,269 @@ export class LiveTrackingService {
     this.isStopping = false;
   }
 
-  private async createPeer(): Promise<Peer> {
-    const { Peer } = await import('peerjs');
-    return new Peer(PEER_OPTIONS);
+  private initializeSession(
+    role: LiveTrackingRole,
+    name: string,
+    code: string,
+    invitation: LiveTrackingInvitation,
+  ): void {
+    this.$role.set(role);
+    this.$status.set('preparing');
+    this.$error.set(null);
+    this.$invitationCode.set(code);
+    this.$expiresAt.set(invitation.expiresAt);
+    this.invitation = invitation;
+    this.localName = cleanName(name, role === 'hider' ? 'Hider' : 'Seeker');
+    this.expiryTimer = setTimeout(
+      () => this.stop(),
+      Math.max(0, invitation.expiresAt - Date.now()),
+    );
   }
 
-  private configurePeerEvents(peer: Peer): void {
-    peer.on('open', () => {
-      this.ngZone.run(() => {
-        if (this.peer !== peer) {
-          return;
-        }
-        if ([...this.connections.values()].some((connection) => connection.open)) {
-          this.$error.set(null);
-          this.$status.set('connected');
-        } else if (this.$role() === 'seeker' && this.hiderPeerId) {
-          this.connectToHider(peer, this.hiderPeerId);
-        } else if (this.$role() === 'hider') {
-          this.$status.set('waiting');
-        }
-      });
-    });
-    peer.on('disconnected', () => {
-      this.ngZone.run(() => {
-        if (!this.isStopping && this.peer === peer && !peer.destroyed) {
-          peer.reconnect();
-        }
-      });
-    });
-    peer.on('error', (error) => {
-      this.ngZone.run(() => this.handlePeerError(peer, error));
-    });
-  }
-
-  private waitForPeerOpen(peer: Peer): Promise<string> {
-    return new Promise((resolve, reject) => {
-      let settled = false;
-      const timeout = setTimeout(() => {
-        if (!settled) {
-          settled = true;
-          reject(new Error('Signaling timed out'));
-        }
-      }, SIGNALING_TIMEOUT_MS);
-      peer.on('open', (peerId) => {
-        this.ngZone.run(() => {
-          if (!settled) {
-            settled = true;
-            clearTimeout(timeout);
-            resolve(peerId);
-          }
-        });
-      });
-      peer.on('error', (error) => {
-        this.ngZone.run(() => {
-          if (!settled) {
-            settled = true;
-            clearTimeout(timeout);
-            reject(error);
-          }
-        });
-      });
-      peer.on('close', () => {
-        this.ngZone.run(() => {
-          if (!settled) {
-            settled = true;
-            clearTimeout(timeout);
-            reject(new Error('Signaling closed'));
-          }
-        });
-      });
-    });
-  }
-
-  private acceptIncomingConnection(connection: DataConnection): void {
-    const metadata = parseConnectionMetadata(connection.metadata);
-    if (
-      this.$role() !== 'hider' ||
-      connection.label !== CONNECTION_LABEL ||
-      !metadata ||
-      (this.$expiresAt() ?? 0) <= Date.now()
-    ) {
-      connection.close();
-      return;
-    }
-    this.configureHiderConnection(connection, metadata.name);
-  }
-
-  private connectToHider(peer: Peer, hiderPeerId: string): void {
-    const existing = this.connections.get(hiderPeerId);
-    if (existing && !existing.open) {
-      existing.close();
-    } else if (existing?.open) {
-      return;
+  private async connectTransport(): Promise<boolean> {
+    const invitation = this.invitation;
+    if (!invitation) {
+      return false;
     }
 
-    this.$status.set('connecting');
-    const metadata: ConnectionMetadata = { protocol: CONNECTION_LABEL, name: this.localName };
-    const connection = peer.connect(hiderPeerId, {
-      label: CONNECTION_LABEL,
-      metadata,
-      serialization: 'json',
-      reliable: true,
-    });
-    this.connections.set(hiderPeerId, connection);
-    this.configureSeekerConnection(connection);
-  }
+    try {
+      const [apiKey, { SignallingClient }] = await Promise.all([
+        this.configService.loadApiKey(),
+        import('@metered-ca/realtime'),
+      ]);
+      if (!this.invitation || this.invitation.channel !== invitation.channel) {
+        return false;
+      }
 
-  private configureHiderConnection(connection: DataConnection, name: string): void {
-    const participantId = connection.peer;
-    const previous = this.connections.get(participantId);
-    if (previous && previous !== connection) {
-      previous.close();
+      const client = new SignallingClient({
+        apiKey,
+        autoResubscribe: true,
+        reconnect: { maxAttempts: Infinity },
+      });
+      this.client = client;
+      this.configureClientEvents(client, invitation.channel);
+      await client.connect();
+      await client.subscribe(invitation.channel);
+      return this.client === client;
+    } catch (error) {
+      if (!this.invitation || this.invitation.channel !== invitation.channel) {
+        return false;
+      }
+      this.client = null;
+      this.fail(
+        error instanceof Error && error.message === 'Live tracking is not configured'
+          ? 'Live tracking needs a Metered publishable key in live-tracking-config.json'
+          : 'Could not connect to the managed location relay. Try again.',
+      );
+      return false;
     }
-    this.connections.set(participantId, connection);
-
-    connection.on('open', () => {
-      this.ngZone.run(() => {
-        if (this.connections.get(participantId) !== connection) {
-          return;
-        }
-        this.upsertParticipant({
-          id: participantId,
-          name,
-          position: null,
-          lastSeen: null,
-          connectionState: 'connected',
-        });
-        connection.send({
-          type: 'session',
-          expiresAt: this.$expiresAt() ?? Date.now() + SESSION_DURATION_MS,
-        } satisfies LiveTrackingMessage);
-        this.$status.set('connected');
-      });
-    });
-    connection.on('data', (data) => {
-      this.ngZone.run(() => this.receiveHiderMessage(participantId, data));
-    });
-    connection.on('close', () => {
-      this.ngZone.run(() => this.removeConnection(participantId, connection));
-    });
-    connection.on('error', () => {
-      this.ngZone.run(() => {
-        this.updateParticipant(participantId, { connectionState: 'failed' });
-      });
-    });
   }
 
-  private configureSeekerConnection(connection: DataConnection): void {
-    const hiderPeerId = connection.peer;
-    let didTimeOut = false;
-    const timeout = setTimeout(() => {
+  private configureClientEvents(client: SignallingClient, channel: string): void {
+    client.on('connected', ({ peerId, isReconnect }) => {
       this.ngZone.run(() => {
-        if (this.connections.get(hiderPeerId) !== connection || connection.open) {
+        if (this.client !== client) {
           return;
         }
-        didTimeOut = true;
-        connection.close();
-        this.connections.delete(hiderPeerId);
-        this.$status.set('error');
-        this.$error.set('Connection timed out. Retry or switch networks.');
-      });
-    }, CONNECTION_TIMEOUT_MS);
-    connection.on('open', () => {
-      this.ngZone.run(() => {
-        if (this.connections.get(hiderPeerId) !== connection) {
-          return;
-        }
-        clearTimeout(timeout);
+        this.localPeerId = peerId;
         this.$error.set(null);
-        this.$status.set('connected');
-        this.userLocationService.start('live-tracking');
-        this.broadcastCurrentLocation();
-      });
-    });
-    connection.on('data', (data) => {
-      this.ngZone.run(() => this.receiveSeekerMessage(data));
-    });
-    connection.on('close', () => {
-      this.ngZone.run(() => {
-        clearTimeout(timeout);
-        if (didTimeOut) {
-          return;
-        }
-        if (this.connections.get(hiderPeerId) !== connection) {
-          return;
-        }
-        this.connections.delete(hiderPeerId);
-        this.userLocationService.stop('live-tracking');
-        if (!this.isStopping) {
-          this.$status.set('waiting');
-          this.$error.set('Connection lost. Use Retry to reconnect.');
+        if (isReconnect) {
+          this.$status.set(this.$role() === 'hider' ? 'waiting' : 'connecting');
+          setTimeout(() => void this.announceAfterReconnect(client), 500);
         }
       });
     });
-    connection.on('error', () => {
+    client.on('state-change', ({ to }) => {
+      this.ngZone.run(() => this.syncTransportState(client, to));
+    });
+    client.on('message', (event) => {
+      this.ngZone.run(() => void this.receiveMessage(client, channel, event));
+    });
+    client.on('presence', (event) => {
+      this.ngZone.run(() => this.receivePresence(client, channel, event));
+    });
+    client.on('server-error', ({ code }) => {
       this.ngZone.run(() => {
-        clearTimeout(timeout);
-        if (!connection.open && !this.isStopping) {
-          this.$status.set('error');
-          this.$error.set('Could not open a direct connection. Retry or switch networks.');
+        if (this.client === client && code === 'over_message_quota') {
+          this.fail('The free live-tracking message limit has been reached');
+        }
+      });
+    });
+    client.on('disconnected', ({ willReconnect }) => {
+      this.ngZone.run(() => {
+        if (this.client === client && !this.isStopping) {
+          this.$status.set(willReconnect ? 'reconnecting' : 'error');
+          if (!willReconnect) {
+            this.userLocationService.stop('live-tracking');
+            this.$error.set('The managed relay disconnected. Use Retry to reconnect.');
+          }
         }
       });
     });
   }
 
-  private receiveHiderMessage(participantId: string, value: unknown): void {
-    if (!isLiveLocationMessage(value)) {
+  private syncTransportState(client: SignallingClient, state: SignallingClientState): void {
+    if (this.client !== client || this.isStopping) {
       return;
     }
-    this.updateParticipant(participantId, { position: value.position, lastSeen: value.sentAt });
+    if (state === 'reconnecting') {
+      this.$status.set('reconnecting');
+    } else if (state === 'closed') {
+      this.$status.set('error');
+    }
   }
 
-  private receiveSeekerMessage(value: unknown): void {
-    if (!isLiveSessionMessage(value)) {
+  private async announceAfterReconnect(client: SignallingClient): Promise<void> {
+    if (this.client !== client) {
       return;
     }
-    this.setExpiry(Math.min(value.expiresAt, Date.now() + SESSION_DURATION_MS));
+    if (this.$role() === 'hider') {
+      await this.publishSessionHeartbeat();
+    } else if (this.$role() === 'seeker') {
+      await this.publishMessage({ type: 'hello', name: this.localName, sentAt: Date.now() });
+    }
   }
 
-  private broadcastCurrentLocation(): void {
+  private async receiveMessage(
+    client: SignallingClient,
+    channel: string,
+    event: ChannelMessage,
+  ): Promise<void> {
+    if (
+      this.client !== client ||
+      event.channel !== channel ||
+      event.from === this.localPeerId ||
+      !this.invitation
+    ) {
+      return;
+    }
+
+    const message = await decryptLiveTrackingMessage(this.invitation.key, event.data);
+    if (!message || this.client !== client) {
+      return;
+    }
+    const replayKey = `${event.from}:${message.type}`;
+    const previousTime = this.latestMessageTimes.get(replayKey) ?? 0;
+    if (message.sentAt <= previousTime || Math.abs(Date.now() - message.sentAt) > 120_000) {
+      return;
+    }
+    this.latestMessageTimes.set(replayKey, message.sentAt);
+
+    if (this.$role() === 'hider') {
+      this.receiveHiderMessage(event.from, message);
+    } else if (this.$role() === 'seeker' && message.type === 'session') {
+      this.receiveSessionHeartbeat(message);
+    }
+  }
+
+  private receiveHiderMessage(senderId: string, message: LiveTrackingMessage): void {
+    if (message.type === 'hello') {
+      this.upsertParticipant({
+        id: senderId,
+        name: message.name,
+        position: null,
+        lastSeen: message.sentAt,
+        connectionState: 'connected',
+      });
+      this.$status.set('connected');
+      void this.publishSessionHeartbeat();
+    } else if (message.type === 'location') {
+      const existing = this.$remoteParticipants().find((participant) => participant.id === senderId);
+      this.upsertParticipant({
+        id: senderId,
+        name: message.name,
+        position: message.position,
+        lastSeen: message.sentAt,
+        connectionState: existing?.connectionState ?? 'connected',
+      });
+      this.$status.set('connected');
+    }
+  }
+
+  private receiveSessionHeartbeat(message: Extract<LiveTrackingMessage, { type: 'session' }>): void {
+    if (!this.invitation || message.expiresAt !== this.invitation.expiresAt) {
+      return;
+    }
+    this.$error.set(null);
+    this.$status.set('connected');
+    this.userLocationService.start('live-tracking');
     const position = this.userLocationService.$position();
     if (position) {
-      this.sendToOpenConnections({ type: 'location', position, sentAt: Date.now() });
+      void this.publishLocation(position, true);
     }
   }
 
-  private sendToOpenConnections(message: LiveTrackingMessage): void {
-    for (const connection of this.connections.values()) {
-      if (connection.open) {
-        connection.send(message);
-      }
-    }
-  }
-
-  private removeConnection(participantId: string, connection: DataConnection): void {
-    if (this.connections.get(participantId) !== connection) {
+  private receivePresence(client: SignallingClient, channel: string, event: PresenceEvent): void {
+    if (this.client !== client || event.channel !== channel || this.$role() !== 'hider') {
       return;
     }
-    this.connections.delete(participantId);
+    const leftIds = new Set(event.left.map((participant) => participant.peerId));
+    if (leftIds.size === 0) {
+      return;
+    }
     this.$remoteParticipants.update((participants) =>
-      participants.filter((participant) => participant.id !== participantId),
+      participants.filter((participant) => !leftIds.has(participant.id)),
     );
-    if (!this.isStopping && this.connections.size === 0) {
+    if (this.$remoteParticipants().length === 0) {
       this.$status.set('waiting');
     }
   }
 
-  private handlePeerError(peer: Peer, error: PeerError<`${PeerErrorType}`>): void {
-    if (this.isStopping || this.peer !== peer) {
+  private async publishSessionHeartbeat(): Promise<void> {
+    if (this.$role() !== 'hider' || !this.invitation) {
       return;
     }
+    await this.publishMessage({
+      type: 'session',
+      expiresAt: this.invitation.expiresAt,
+      sentAt: Date.now(),
+    });
+  }
 
-    if (error.type === 'peer-unavailable') {
-      this.$status.set('error');
-      this.$error.set('Session not found. Check the code or ask the hider for a new session.');
+  private async publishLocation(position: UserLocation, force = false): Promise<void> {
+    const now = Date.now();
+    if (!force && !this.shouldPublishLocation(position, now)) {
       return;
     }
-    if (error.type === 'network' && [...this.connections.values()].some((connection) => connection.open)) {
+    this.lastLocationPublishedAt = now;
+    this.lastPublishedPosition = position;
+    const message: LiveLocationMessage = {
+      type: 'location',
+      name: this.localName,
+      position,
+      sentAt: now,
+    };
+    await this.publishMessage(message);
+  }
+
+  private shouldPublishLocation(position: UserLocation, now: number): boolean {
+    if (now - this.lastLocationPublishedAt < MIN_LOCATION_INTERVAL_MS) {
+      return false;
+    }
+    return (
+      !this.lastPublishedPosition ||
+      now - this.lastLocationPublishedAt >= LOCATION_KEEPALIVE_MS ||
+      distanceMeters(this.lastPublishedPosition, position) >= MIN_LOCATION_DISTANCE_METERS
+    );
+  }
+
+  private async publishMessage(message: LiveTrackingMessage): Promise<void> {
+    const client = this.client;
+    const invitation = this.invitation;
+    if (!client || client.state !== 'connected' || !invitation) {
       return;
     }
-    this.$status.set('error');
-    this.$error.set('The signaling service is unavailable. Retry in a moment.');
+    try {
+      const encrypted = await encryptLiveTrackingMessage(invitation.key, message);
+      if (this.client === client && client.state === 'connected') {
+        await client.publish(invitation.channel, encrypted);
+      }
+    } catch {
+      if (this.client === client && !this.isStopping) {
+        this.$status.set('error');
+        this.$error.set('A location update could not be relayed. Use Retry to reconnect.');
+      }
+    }
   }
 
   private upsertParticipant(participant: RemoteParticipant): void {
@@ -464,95 +422,23 @@ export class LiveTrackingService {
     ]);
   }
 
-  private updateParticipant(participantId: string, patch: Partial<RemoteParticipant>): void {
-    this.$remoteParticipants.update((participants) =>
-      participants.map((participant) =>
-        participant.id === participantId ? { ...participant, ...patch } : participant,
-      ),
-    );
-  }
-
-  private setExpiry(expiresAt: number): void {
-    this.$expiresAt.set(expiresAt);
-    if (this.expiryTimer) {
-      clearTimeout(this.expiryTimer);
-    }
-    this.expiryTimer = setTimeout(() => this.stop(), Math.max(0, expiresAt - Date.now()));
-  }
-
-  private isWebRtcSupported(): boolean {
-    return typeof RTCPeerConnection !== 'undefined';
-  }
-
   private fail(message: string): void {
     this.$error.set(message);
     this.$status.set('error');
   }
 }
 
-function encodeInvitation(peerId: string): string {
-  return `${INVITATION_PREFIX}${peerId}`;
-}
-
-function decodeInvitation(value: string): string | null {
-  const normalized = value.trim();
-  if (!normalized.startsWith(INVITATION_PREFIX)) {
-    return null;
-  }
-  const peerId = normalized.slice(INVITATION_PREFIX.length);
-  return /^[a-zA-Z0-9][a-zA-Z0-9_-]{8,98}[a-zA-Z0-9]$/.test(peerId) ? peerId : null;
-}
-
 function cleanName(name: string, fallback: string): string {
   return name.trim().slice(0, 80) || fallback;
 }
 
-function parseConnectionMetadata(value: unknown): ConnectionMetadata | null {
-  if (typeof value !== 'object' || value === null || Array.isArray(value)) {
-    return null;
-  }
-  const metadata = value as Record<string, unknown>;
-  if (
-    metadata['protocol'] !== CONNECTION_LABEL ||
-    typeof metadata['name'] !== 'string' ||
-    metadata['name'].length === 0 ||
-    metadata['name'].length > 80
-  ) {
-    return null;
-  }
-  return { protocol: CONNECTION_LABEL, name: metadata['name'] };
-}
-
-function isLiveSessionMessage(value: unknown): value is Extract<LiveTrackingMessage, { type: 'session' }> {
-  if (typeof value !== 'object' || value === null || Array.isArray(value)) {
-    return false;
-  }
-  const message = value as Record<string, unknown>;
-  return (
-    message['type'] === 'session' &&
-    isFiniteRange(message['expiresAt'], Date.now() - 60_000, Date.now() + SESSION_DURATION_MS)
-  );
-}
-
-function isLiveLocationMessage(value: unknown): value is LiveLocationMessage {
-  if (typeof value !== 'object' || value === null || Array.isArray(value)) {
-    return false;
-  }
-  const message = value as Record<string, unknown>;
-  const position = message['position'];
-  if (typeof position !== 'object' || position === null || Array.isArray(position)) {
-    return false;
-  }
-  const coordinates = position as Record<string, unknown>;
-  return (
-    message['type'] === 'location' &&
-    isFiniteRange(coordinates['lat'], -90, 90) &&
-    isFiniteRange(coordinates['lng'], -180, 180) &&
-    isFiniteRange(coordinates['accuracyMeters'], 0, 1_000_000) &&
-    isFiniteRange(message['sentAt'], 0, Number.MAX_SAFE_INTEGER)
-  );
-}
-
-function isFiniteRange(value: unknown, minimum: number, maximum: number): value is number {
-  return typeof value === 'number' && Number.isFinite(value) && value >= minimum && value <= maximum;
+function distanceMeters(first: UserLocation, second: UserLocation): number {
+  const latitudeDelta = ((second.lat - first.lat) * Math.PI) / 180;
+  const longitudeDelta = ((second.lng - first.lng) * Math.PI) / 180;
+  const firstLatitude = (first.lat * Math.PI) / 180;
+  const secondLatitude = (second.lat * Math.PI) / 180;
+  const haversine =
+    Math.sin(latitudeDelta / 2) ** 2 +
+    Math.cos(firstLatitude) * Math.cos(secondLatitude) * Math.sin(longitudeDelta / 2) ** 2;
+  return 6_371_000 * 2 * Math.atan2(Math.sqrt(haversine), Math.sqrt(1 - haversine));
 }

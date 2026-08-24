@@ -44,6 +44,29 @@ To execute unit tests with the [Vitest](https://vitest.dev/) test runner, use th
 ng test
 ```
 
+## Live tracking configuration
+
+Live tracking uses Metered Realtime Messaging as an encrypted, managed relay. No application server
+or TURN server is required. The free plan has hard limits and does not create usage charges.
+
+1. Create a free account at [Metered](https://dashboard.metered.ca/signup).
+2. Open **Realtime Messaging → Keys → Create key**.
+3. Choose a publishable `pk_live_...` key.
+4. Put the publishable key in `public/live-tracking-config.json`:
+
+```json
+{
+  "meteredApiKey": "pk_live_your_key_here"
+}
+```
+
+The current Metered dashboard may create publishable keys without editable channel or origin fields.
+The configured key has been verified for `subscribe`, `publish`, message delivery, and `presence` on
+`jetlag-live-*` channels. Never put a Metered secret key in this repository.
+
+Session codes contain a random channel ID and a locally generated AES-256 key. Player names and
+locations are AES-GCM encrypted before publication, so Metered only relays ciphertext.
+
 ## Running end-to-end tests
 
 For end-to-end (e2e) testing, run:

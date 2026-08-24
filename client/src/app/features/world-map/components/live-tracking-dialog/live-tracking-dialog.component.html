@@ -10,8 +10,9 @@
   <ng-container *nzModalContent>
     <div class="live-dialog">
       <p class="privacy-note">
-        PeerJS Cloud introduces the browsers and may relay encrypted traffic when a direct connection
-        is blocked. Locations are not stored, and the session expires after six hours.
+        Locations and names are encrypted on this device before Metered relays them. They are not
+        stored by this app, and the session expires after six hours. Anyone with the QR or private
+        code can decrypt this session, so share it only with players.
       </p>
 
       @if (!$role()) {
@@ -28,7 +29,7 @@
           <section>
             <span class="role-stamp">HIDER</span>
             <h3>Receive seeker locations</h3>
-            <p>Create one session. Every seeker can join using the same short code or QR.</p>
+            <p>Create one session. Every seeker can join using the same private code or QR.</p>
             <button
               type="button"
               nz-button
@@ -48,7 +49,7 @@
               nz-input
               [(ngModel)]="sessionInput"
               aria-label="Hider session code"
-              placeholder="JLM1..."
+              placeholder="JLM2..."
               (keydown.enter)="joinSession()"
             />
             <div class="button-row">
