@@ -27,6 +27,7 @@ import {
   createThermometerEndIcon,
   createThermometerStartIcon,
   getBisectorPath,
+  getProjectedMidpoint,
   getBoundingBox,
   getAreaQuestionBounds,
   getRadarQuestionBounds,
@@ -515,9 +516,8 @@ export class WorldMapRendererService {
     });
 
     // Small dot at the midpoint so the centre is unambiguous
-    const midLat = (question.start.lat + question.end.lat) / 2;
-    const midLng = (question.start.lng + question.end.lng) / 2;
-    const midDot = L.circleMarker(L.latLng(midLat, midLng), {
+    const midpoint = getProjectedMidpoint(question.start, question.end);
+    const midDot = L.circleMarker(L.latLng(midpoint.lat, midpoint.lng), {
       radius: 4,
       color: question.color,
       weight: 1,
@@ -542,9 +542,8 @@ export class WorldMapRendererService {
       const updateBisector = (): void => {
         const s = startMarker.getLatLng();
         const e = endMarker.getLatLng();
-        const nextMidLat = (s.lat + e.lat) / 2;
-        const nextMidLng = (s.lng + e.lng) / 2;
-        midDot.setLatLng(L.latLng(nextMidLat, nextMidLng));
+        const nextMidpoint = getProjectedMidpoint(s, e);
+        midDot.setLatLng(L.latLng(nextMidpoint.lat, nextMidpoint.lng));
 
         bisectorLine.setLatLngs(
           createBisectorLatLngs({ lat: s.lat, lng: s.lng }, { lat: e.lat, lng: e.lng }),
